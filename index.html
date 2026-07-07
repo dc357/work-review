@@ -100,11 +100,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
 .msg-images{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .msg-thumb{max-width:160px;max-height:160px;border-radius:8px;object-fit:cover}
+.msg-audio-list{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.msg-audio-item{font-size:12px;color:var(--text-secondary);background:rgba(0,0,0,.04);padding:3px 8px;border-radius:4px}
 /* 图片预览栏 */
 .image-preview-bar{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
 .preview-item{position:relative;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
 .preview-item img{width:100%;height:100%;object-fit:cover}
 .preview-remove{position:absolute;top:-2px;right:-2px;width:18px;height:18px;background:var(--danger);color:#fff;border-radius:50%;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1}
+/* 音频预览栏 */
+.audio-preview-bar{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
+.audio-preview-item{display:flex;align-items:center;gap:4px;background:var(--bg);padding:4px 10px;border-radius:6px;font-size:12px}
+.audio-preview-item .audio-icon{font-size:14px}
+.audio-preview-item .audio-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)}
+.audio-preview-item .preview-remove{position:static;width:16px;height:16px;font-size:9px;flex-shrink:0}
 .input-hint{font-size:11px;color:var(--text-secondary);margin-top:6px;text-align:center;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 .input-hint span{cursor:pointer;opacity:.7;transition:opacity .12s}
 .input-hint span:hover{opacity:1;color:var(--primary)}
@@ -231,7 +239,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
         <div class="input-actions">
           <button id="voiceBtn" onpointerdown="toggleVoice()" title="语音输入" style="touch-action:manipulation">🎤</button>
           <button onclick="document.getElementById('fileInput').click()" title="上传文件">📎</button>
-          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp" style="display:none" onchange="handleFileUpload(event)" multiple>
+          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp,.mp3,.wav,.m4a,.aac,.ogg,.wma,.flac,.amr,.opus" style="display:none" onchange="handleFileUpload(event)" multiple>
           <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="发送">➤</button>
         </div>
       </div>
@@ -282,6 +290,7 @@ const STATE = {
   allData: JSON.parse(localStorage.getItem('ws_all_data') || '{}'),
   messages: [], // 当前对话历史
   pendingImages: [], // 待发送的图片(base64)
+  pendingAudio: [], // 待发送的录音({name, data: base64})
   isGenerating: false
 };
 
@@ -337,6 +346,7 @@ function getPeriodLabel() {
 function switchPeriod(period) {
   STATE.period = period;
   STATE.pendingImages = [];
+  STATE.pendingAudio = [];
   document.querySelectorAll('.nav-item[data-period]').forEach(el => el.classList.remove('active'));
   document.querySelector(`.nav-item[data-period="${period}"]`)?.classList.add('active');
   loadCurrentSession();
@@ -352,6 +362,7 @@ function navigateDate(dir) {
   else if (STATE.period === 'monthly') d.setMonth(d.getMonth() + dir);
   STATE.currentDate = d;
   STATE.pendingImages = [];
+  STATE.pendingAudio = [];
   loadCurrentSession();
   updateHeader();
   renderChat();
@@ -404,10 +415,14 @@ function renderChat() {
   STATE.messages.forEach((msg, i) => {
     if (msg.type === 'user') {
       let imgHtml = '';
+      let audioHtml = '';
       if (msg.images && msg.images.length > 0) {
         imgHtml = '<div class="msg-images">' + msg.images.map(img => `<img src="${img}" class="msg-thumb">`).join('') + '</div>';
       }
-      html += `<div class="msg msg-user"><div class="bubble">${escHtml(msg.content)}${imgHtml}</div><div class="msg-meta">${msg.time || ''}</div></div>`;
+      if (msg.audio && msg.audio.length > 0) {
+        audioHtml = '<div class="msg-audio-list">' + msg.audio.map(a => `<div class="msg-audio-item">🎙️ ${escHtml(a.name)}</div>`).join('') + '</div>';
+      }
+      html += `<div class="msg msg-user"><div class="bubble">${escHtml(msg.content)}${imgHtml}${audioHtml}</div><div class="msg-meta">${msg.time || ''}</div></div>`;
     } else if (msg.type === 'ai') {
       // report-context 不渲染（仅用于AI上下文，报告卡片已显示）
       if (msg.subType === 'report-context') return;
@@ -479,7 +494,8 @@ async function sendMessage() {
   const input = document.getElementById('userInput');
   const text = input.value.trim();
   const hasImages = STATE.pendingImages.length > 0;
-  if ((!text && !hasImages) || STATE.isGenerating) return;
+  const hasAudio = STATE.pendingAudio.length > 0;
+  if ((!text && !hasImages && !hasAudio) || STATE.isGenerating) return;
 
   // 添加用户消息
   const now = new Date();
@@ -487,14 +503,17 @@ async function sendMessage() {
     type: 'user',
     content: text,
     images: hasImages ? [...STATE.pendingImages] : undefined,
+    audio: hasAudio ? [...STATE.pendingAudio] : undefined,
     time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
   };
   STATE.messages.push(msg);
 
   input.value = '';
   STATE.pendingImages = [];
+  STATE.pendingAudio = [];
   autoResize(input);
   updateImagePreview();
+  updateAudioPreview();
   saveCurrentSession();
   renderChat();
 
@@ -615,15 +634,24 @@ async function aiRespond() {
   const messages = [{ role: 'system', content: getSystemPrompt() }];
   STATE.messages.forEach(msg => {
     if (msg.type === 'user') {
-      // 支持多模态：如果有图片且提供商支持vision，用数组格式
-      if (msg.images && msg.images.length > 0 && STATE.isVisionProvider) {
-        const parts = [{ type: 'text', text: msg.content || '请分析这张图片' }];
-        msg.images.forEach(img => {
+      // 支持多模态
+      const hasMedia = (msg.images && msg.images.length > 0) || (msg.audio && msg.audio.length > 0);
+      if (hasMedia && STATE.isVisionProvider) {
+        const parts = [{ type: 'text', text: msg.content || '请分析' }];
+        if (msg.images) msg.images.forEach(img => {
           parts.push({ type: 'image_url', image_url: { url: img } });
+        });
+        if (msg.audio) msg.audio.forEach(a => {
+          // Kimi等模型支持通过内容数组传递文件URL
+          parts.push({ type: 'file_url', file_url: { url: a.data, name: a.name } });
         });
         messages.push({ role: 'user', content: parts });
       } else {
-        messages.push({ role: 'user', content: msg.content || '[图片]' });
+        let content = msg.content || '';
+        if (msg.audio && msg.audio.length > 0) {
+          content += '\n\n[上传了录音文件: ' + msg.audio.map(a => a.name).join(', ') + ']';
+        }
+        messages.push({ role: 'user', content: content || '[附件]' });
       }
     } else if (msg.type === 'ai' && msg.subType !== 'system') {
       messages.push({ role: 'assistant', content: msg.content });
@@ -889,6 +917,7 @@ function stopVoice() {
 
 // ==================== 文件上传 ====================
 const IMAGE_EXTS = ['jpg','jpeg','png','gif','bmp','webp','svg','ico','tiff','tif'];
+const AUDIO_EXTS = ['mp3','wav','m4a','aac','ogg','wma','flac','amr','opus','webm'];
 
 // API提供商预设
 const API_PROVIDERS = {
@@ -934,10 +963,29 @@ async function processFiles(files) {
   const input = document.getElementById('userInput');
   let extracted = '';
   let imageCount = 0;
+  let audioCount = 0;
 
   for (const file of files) {
     const ext = file.name.split('.').pop().toLowerCase();
     
+    // 音频文件：转为base64加入待发送队列（需要支持多模态的模型）
+    if (AUDIO_EXTS.includes(ext)) {
+      if (STATE.isVisionProvider) {
+        try {
+          const base64 = await fileToBase64(file);
+          STATE.pendingAudio.push({ name: file.name, data: base64 });
+          audioCount++;
+          showToast(`录音已添加: ${file.name}`, 'success');
+          updateAudioPreview();
+        } catch (e) {
+          showToast(`录音读取失败: ${file.name}`, 'error');
+        }
+      } else {
+        audioCount++;
+      }
+      continue;
+    }
+
     // 图片文件：如果当前提供商支持vision，转为base64加入待发送队列
     if (IMAGE_EXTS.includes(ext)) {
       if (STATE.isVisionProvider) {
@@ -967,10 +1015,11 @@ async function processFiles(files) {
   if (imageCount > 0 && !STATE.isVisionProvider) {
     showToast(`图片文件(${imageCount}个)暂不支持识别。切换为Kimi等视觉模型后可用`, 'error');
   }
-
-  if (STATE.pendingImages.length > 0) {
-    updateImagePreview();
+  if (audioCount > 0 && !STATE.isVisionProvider) {
+    showToast(`录音文件(${audioCount}个)需要Kimi等多模态模型支持，请切换提供商`, 'error');
   }
+
+  if (STATE.pendingImages.length > 0) updateImagePreview();
 
   if (extracted && input) {
     input.value = (input.value + extracted).trim();
@@ -1014,6 +1063,35 @@ function updateImagePreview() {
 function removePendingImage(i) {
   STATE.pendingImages.splice(i, 1);
   updateImagePreview();
+}
+
+function updateAudioPreview() {
+  let preview = document.getElementById('audioPreview');
+  if (!preview) {
+    preview = document.createElement('div');
+    preview.id = 'audioPreview';
+    preview.className = 'audio-preview-bar';
+    const inputArea = document.getElementById('inputArea');
+    inputArea.insertBefore(preview, inputArea.querySelector('.voice-status'));
+  }
+  if (STATE.pendingAudio.length === 0) {
+    preview.innerHTML = '';
+    preview.style.display = 'none';
+  } else {
+    preview.style.display = 'flex';
+    preview.innerHTML = STATE.pendingAudio.map((a,i) => 
+      `<div class="audio-preview-item">
+        <span class="audio-icon">🎙️</span>
+        <span class="audio-name">${escHtml(a.name)}</span>
+        <span class="preview-remove" onclick="removePendingAudio(${i})">✕</span>
+      </div>`
+    ).join('');
+  }
+}
+
+function removePendingAudio(i) {
+  STATE.pendingAudio.splice(i, 1);
+  updateAudioPreview();
 }
 
 async function extractText(file) {
@@ -1126,7 +1204,7 @@ function restoreMainView() {
         <div class="input-actions">
           <button id="voiceBtn" onpointerdown="toggleVoice()" style="touch-action:manipulation">🎤</button>
           <button onclick="document.getElementById('fileInput').click()">📎</button>
-          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp" style="display:none" onchange="handleFileUpload(event)" multiple>
+          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp,.mp3,.wav,.m4a,.aac,.ogg,.wma,.flac,.amr,.opus" style="display:none" onchange="handleFileUpload(event)" multiple>
           <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
         </div>
       </div>
