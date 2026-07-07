@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作复盘工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f0f2f5;
+  --card-bg: #fff;
+  --primary: #4f6ef7;
+  --primary-light: #eef1ff;
+  --text: #1a1a2e;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --shadow: 0 1px 3px rgba(0,0,0,.06);
+  --radius: 10px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;height:100vh;overflow:hidden}
+.app{display:flex;height:100vh}
+
+/* 侧边栏 */
+.sidebar{width:220px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-header{padding:16px 20px;border-bottom:1px solid var(--border)}
+.sidebar-header h1{font-size:17px;font-weight:700;color:var(--primary)}
+.sidebar-header p{font-size:11px;color:var(--text-secondary);margin-top:2px}
+.nav-label{padding:12px 20px 4px;font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:8px;padding:9px 20px;cursor:pointer;font-size:13px;color:var(--text);border:none;background:none;width:100%;text-align:left;transition:all .12s}
+.nav-item:hover{background:var(--primary-light);color:var(--primary)}
+.nav-item.active{background:var(--primary-light);color:var(--primary);font-weight:600;border-right:3px solid var(--primary)}
+.nav-icon{font-size:15px;width:20px;text-align:center}
+.sidebar-footer{padding:12px 20px;border-top:1px solid var(--border);margin-top:auto;font-size:11px;color:var(--text-secondary)}
+
+/* 主区域 */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{padding:16px 24px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.main-header h2{font-size:17px;font-weight:700}
+.main-header .period-info{font-size:13px;color:var(--text-secondary)}
+.date-nav{display:flex;align-items:center;gap:6px}
+.date-nav button{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.date-nav button:hover{background:var(--primary-light);border-color:var(--primary)}
+.date-nav .today-btn{border-radius:6px;width:auto;padding:0 10px;font-size:11px}
+.hamburger{display:none;width:36px;height:36px;align-items:center;justify-content:center;font-size:20px;border:none;background:none;cursor:pointer;margin-right:8px;color:var(--text);border-radius:6px}
+.hamburger:hover{background:var(--bg)}
+
+/* 对话区域 */
+.chat-area{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-secondary);text-align:center;padding:40px}
+.chat-empty .empty-icon{font-size:56px;margin-bottom:16px}
+.chat-empty h3{font-size:18px;margin-bottom:8px;color:var(--text)}
+.chat-empty p{font-size:13px;max-width:400px;line-height:1.8}
+
+/* 消息气泡 */
+.msg{max-width:85%;animation:fadeIn .3s ease}
+.msg-user{align-self:flex-end}
+.msg-ai{align-self:flex-start}
+.msg .bubble{padding:14px 18px;border-radius:16px;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.msg-user .bubble{background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.msg-ai .bubble{background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;box-shadow:var(--shadow)}
+.msg-ai.inquiry .bubble{background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fcd34d}
+.msg-ai.report .bubble{background:#f0fdf4;border-color:#86efac}
+.msg .msg-meta{font-size:11px;color:var(--text-secondary);margin-top:4px;padding:0 4px}
+.msg-user .msg-meta{text-align:right}
+.msg-ai .msg-meta{text-align:left}
+
+/* 追问气泡里的按钮 */
+.quick-reply{display:inline-block;padding:6px 14px;margin:4px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:#fff;cursor:pointer;transition:all .12s}
+.quick-reply:hover{border-color:var(--primary);background:var(--primary-light);color:var(--primary)}
+
+/* 报告卡片 */
+.report-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin:8px 0}
+.report-card h4{font-size:14px;margin-bottom:8px}
+.report-tabs{display:flex;gap:0;margin-bottom:12px;border-bottom:2px solid var(--border)}
+.report-tab{padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px}
+.report-tab.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+.report-body{font-size:13px;line-height:1.9;white-space:pre-wrap}
+.report-body.sharp{background:#1a1a2e;color:#e2e8f0;padding:20px;border-radius:8px;font-size:13px;line-height:2}
+.report-body.sharp h3{color:#f59e0b;margin:12px 0 6px}
+.report-body.sharp .sharp-q{background:#2d2d44;padding:10px 14px;border-radius:6px;margin:6px 0;border-left:3px solid #ef4444}
+
+/* 底部输入区 */
+.input-area{padding:12px 24px 16px;background:#fff;border-top:1px solid var(--border)}
+.input-row{display:flex;gap:8px;align-items:flex-end}
+.input-row textarea{flex:1;padding:12px 16px;border:2px solid var(--border);border-radius:20px;font-size:14px;font-family:inherit;resize:none;min-height:46px;max-height:120px;line-height:1.5;transition:border-color .15s}
+.input-row textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,110,247,.1)}
+.input-row textarea::placeholder{color:#c4c4c4}
+.input-actions{display:flex;gap:6px;align-items:center}
+.input-actions button{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
+.input-actions button:hover{background:var(--primary-light);border-color:var(--primary)}
+.input-actions button.voice-active{background:var(--danger);color:#fff;border-color:var(--danger);animation:pulse 1.5s infinite}
+.input-actions button.send-btn{background:var(--primary);color:#fff;border:none;width:40px;height:40px;font-size:18px}
+.input-actions button.send-btn:hover{background:#3d5ce5}
+.input-actions button.send-btn:disabled{background:#ccc;cursor:not-allowed}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.msg-images{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.msg-thumb{max-width:160px;max-height:160px;border-radius:8px;object-fit:cover}
+/* 图片预览栏 */
+.image-preview-bar{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
+.preview-item{position:relative;width:56px;height:56px;border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+.preview-item img{width:100%;height:100%;object-fit:cover}
+.preview-remove{position:absolute;top:-2px;right:-2px;width:18px;height:18px;background:var(--danger);color:#fff;border-radius:50%;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1}
+.input-hint{font-size:11px;color:var(--text-secondary);margin-top:6px;text-align:center;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.input-hint span{cursor:pointer;opacity:.7;transition:opacity .12s}
+.input-hint span:hover{opacity:1;color:var(--primary)}
+.voice-status{font-size:12px;color:var(--danger);text-align:center;margin-top:4px;min-height:18px}
+
+/* 拖拽上传 */
+.input-area.drag-over{background:var(--primary-light);border-color:var(--primary)}
+.input-area.drag-over::after{content:'松手即可上传文件';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:16px;font-weight:700;color:var(--primary);pointer-events:none;z-index:10}
+.input-area{position:relative}
+
+/* Toast */
+.toast{position:fixed;top:20px;right:20px;z-index:300;padding:12px 20px;border-radius:8px;font-size:13px;color:#fff;animation:slideIn .3s ease;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.toast-success{background:var(--success)}
+.toast-error{background:var(--danger)}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* 模态 */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:12px;padding:28px;width:90%;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,.15);max-height:80vh;overflow-y:auto}
+.modal h3{font-size:17px;margin-bottom:16px}
+.modal .form-group{margin-bottom:14px}
+.modal .form-group label{display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px}
+.modal input,.modal select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px}
+.modal input:focus,.modal select:focus{outline:none;border-color:var(--primary)}
+
+.btn{padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:#3d5ce5}
+.btn-outline{background:#fff;border:1px solid var(--border);color:var(--text)}
+.btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.btn-sm{padding:6px 14px;font-size:12px}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+
+.spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.typing-indicator{display:flex;gap:4px;padding:8px 0}
+.typing-indicator span{width:7px;height:7px;border-radius:50%;background:var(--text-secondary);animation:typing 1.4s infinite}
+.typing-indicator span:nth-child(2){animation-delay:.2s}
+.typing-indicator span:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+
+@media(max-width:768px){
+  .sidebar{position:fixed;top:0;left:0;height:100%;z-index:1000;transform:translateX(-100%);transition:transform .25s ease;box-shadow:2px 0 12px rgba(0,0,0,.15)}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-backdrop{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.3);z-index:999}
+  .sidebar-backdrop.show{display:block}
+  .main{margin-left:0}
+  .hamburger{display:flex!important}
+  .input-actions button{width:44px;height:44px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 侧边栏 -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <h1>工作复盘工具</h1>
+      <p>自由记录 · AI追问 · 双报告</p>
+    </div>
+    <div class="nav-label">时间维度</div>
+    <button class="nav-item active" data-period="daily" onclick="switchPeriod('daily')">
+      <span class="nav-icon">📅</span>日报
+    </button>
+    <button class="nav-item" data-period="weekly" onclick="switchPeriod('weekly')">
+      <span class="nav-icon">📊</span>周报
+    </button>
+    <button class="nav-item" data-period="monthly" onclick="switchPeriod('monthly')">
+      <span class="nav-icon">📈</span>月报
+    </button>
+    <button class="nav-item" data-period="custom" onclick="switchPeriod('custom')">
+      <span class="nav-icon">📋</span>自定义
+    </button>
+    <div class="nav-label">功能</div>
+    <button class="nav-item" onclick="showHistory()">
+      <span class="nav-icon">📁</span>历史记录
+    </button>
+    <button class="nav-item" onclick="showSettings()">
+      <span class="nav-icon">⚙️</span>API设置
+    </button>
+    <button class="nav-item" onclick="exportData()">
+      <span class="nav-icon">💾</span>导出数据
+    </button>
+    <button class="nav-item" onclick="document.getElementById('importFile').click()">
+      <span class="nav-icon">📥</span>导入数据
+    </button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+    <div class="sidebar-footer">数据存储在浏览器本地<br>不会上传到任何服务器</div>
+  </nav>
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
+  <!-- 主区域 -->
+  <div class="main" id="mainApp">
+    <div class="main-header">
+      <button class="hamburger" onclick="toggleSidebar()" title="菜单">☰</button>
+      <div>
+        <h2 id="pageTitle">日报 · 工作复盘</h2>
+        <div class="period-info" id="dateLabel"></div>
+      </div>
+      <div class="date-nav">
+        <button onclick="navigateDate(-1)">◀</button>
+        <button class="today-btn" onclick="goToday()">今天</button>
+        <button onclick="navigateDate(1)">▶</button>
+      </div>
+    </div>
+
+    <!-- 对话区 -->
+    <div class="chat-area" id="chatArea">
+      <div class="chat-empty">
+        <div class="empty-icon">💬</div>
+        <h3>开始今天的复盘吧</h3>
+        <p>随便写、随便说——今天做了什么、遇到什么问题、有什么发现。写完我会像顾问一样追问你，帮你挖出更深的东西。</p>
+      </div>
+    </div>
+
+    <!-- 输入区 -->
+    <div class="input-area" id="inputArea" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+      <div class="input-row">
+        <textarea id="userInput" rows="1" placeholder="说说今天的工作...（支持语音输入 🎤）" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+        <div class="input-actions">
+          <button id="voiceBtn" onpointerdown="toggleVoice()" title="语音输入" style="touch-action:manipulation">🎤</button>
+          <button onclick="document.getElementById('fileInput').click()" title="上传文件">📎</button>
+          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp" style="display:none" onchange="handleFileUpload(event)" multiple>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="发送">➤</button>
+        </div>
+      </div>
+      <div class="voice-status" id="voiceStatus"></div>
+      <div class="input-hint">
+        <span onclick="quickFill('今天回访了')">回访学员</span>
+        <span onclick="quickFill('今天卖了')">业绩</span>
+        <span onclick="quickFill('今天遇到一个问题')">问题</span>
+        <span onclick="quickFill('今天发现')">新发现</span>
+        <span onclick="quickFill('今天的反思')">反思</span>
+        <span>|</span>
+        <span onclick="generateReport()" style="font-weight:600">📄 生成报告</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastLayer"></div>
+<div id="modalLayer"></div>
+
+<script>
+// ==================== 手机端侧边栏 ====================
+function toggleSidebar() {
+  document.querySelector('.sidebar').classList.toggle('open');
+  document.getElementById('sidebarBackdrop').classList.toggle('show');
+}
+// 手机上点击侧边栏任意按钮后自动关闭
+document.querySelector('.sidebar').addEventListener('click', function(e) {
+  if (e.target.closest('button') && window.innerWidth <= 768) {
+    this.classList.remove('open');
+    document.getElementById('sidebarBackdrop').classList.remove('show');
+  }
+});
+
+// ==================== 状态管理 ====================
+const STATE = {
+  period: 'daily',
+  currentDate: new Date(),
+  customStart: null,
+  customEnd: null,
+  apiConfig: {
+    provider: localStorage.getItem('ws_api_provider') || 'deepseek',
+    endpoint: localStorage.getItem('ws_api_endpoint') || 'https://api.deepseek.com/v1',
+    apiKey: localStorage.getItem('ws_api_key') || '',
+    model: localStorage.getItem('ws_api_model') || 'deepseek-chat'
+  },
+  get isVisionProvider() { return API_PROVIDERS[this.apiConfig.provider]?.vision || false; },
+  allData: JSON.parse(localStorage.getItem('ws_all_data') || '{}'),
+  messages: [], // 当前对话历史
+  pendingImages: [], // 待发送的图片(base64)
+  isGenerating: false
+};
+
+function saveData() { localStorage.setItem('ws_all_data', JSON.stringify(STATE.allData)); }
+
+function formatDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+function getWeekRange(d) {
+  const start = new Date(d);
+  const day = start.getDay() || 7;
+  start.setDate(start.getDate() - day + 1);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return { start: new Date(start), end: new Date(end) };
+}
+
+function getEntryKey() {
+  const d = STATE.currentDate;
+  if (STATE.period === 'daily') return formatDate(d);
+  if (STATE.period === 'weekly') {
+    const r = getWeekRange(d);
+    return `week_${formatDate(r.start)}_${formatDate(r.end)}`;
+  }
+  if (STATE.period === 'monthly') return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  if (STATE.period === 'custom' && STATE.customStart && STATE.customEnd) {
+    return `custom_${formatDate(STATE.customStart)}_${formatDate(STATE.customEnd)}`;
+  }
+  return formatDate(d);
+}
+
+function getDateLabel() {
+  const d = STATE.currentDate;
+  const weekdays = ['日','一','二','三','四','五','六'];
+  if (STATE.period === 'daily') return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 星期${weekdays[d.getDay()]}`;
+  if (STATE.period === 'weekly') {
+    const r = getWeekRange(d);
+    const wn = Math.ceil(((r.start - new Date(r.start.getFullYear(),0,1)) / 86400000 + new Date(r.start.getFullYear(),0,1).getDay() + 1) / 7);
+    return `${r.start.getFullYear()}年第${wn}周 (${formatDate(r.start)} ~ ${formatDate(r.end)})`;
+  }
+  if (STATE.period === 'monthly') return `${d.getFullYear()}年${d.getMonth()+1}月`;
+  if (STATE.period === 'custom' && STATE.customStart && STATE.customEnd) {
+    return `${formatDate(STATE.customStart)} ~ ${formatDate(STATE.customEnd)}`;
+  }
+  return formatDate(d);
+}
+
+function getPeriodLabel() {
+  const map = {daily:'日',weekly:'周',monthly:'月',custom:''};
+  return map[STATE.period] || '';
+}
+
+// ==================== 导航 ====================
+function switchPeriod(period) {
+  STATE.period = period;
+  STATE.pendingImages = [];
+  document.querySelectorAll('.nav-item[data-period]').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.nav-item[data-period="${period}"]`)?.classList.add('active');
+  loadCurrentSession();
+  updateHeader();
+  renderChat();
+  updateImagePreview();
+}
+
+function navigateDate(dir) {
+  const d = new Date(STATE.currentDate);
+  if (STATE.period === 'daily') d.setDate(d.getDate() + dir);
+  else if (STATE.period === 'weekly') d.setDate(d.getDate() + dir * 7);
+  else if (STATE.period === 'monthly') d.setMonth(d.getMonth() + dir);
+  STATE.currentDate = d;
+  STATE.pendingImages = [];
+  loadCurrentSession();
+  updateHeader();
+  renderChat();
+  updateImagePreview();
+}
+
+function goToday() {
+  STATE.currentDate = new Date();
+  loadCurrentSession();
+  updateHeader();
+  renderChat();
+}
+
+function updateHeader() {
+  document.getElementById('pageTitle').textContent = `${getPeriodLabel()}报 · 工作复盘`;
+  document.getElementById('dateLabel').textContent = getDateLabel();
+}
+
+function loadCurrentSession() {
+  const key = getEntryKey();
+  const saved = STATE.allData[key];
+  STATE.messages = saved?.messages || [];
+}
+
+function saveCurrentSession() {
+  const key = getEntryKey();
+  STATE.allData[key] = {
+    period: STATE.period,
+    periodLabel: getDateLabel(),
+    messages: STATE.messages,
+    updatedAt: new Date().toISOString()
+  };
+  saveData();
+}
+
+// ==================== 对话渲染 ====================
+function renderChat() {
+  const area = document.getElementById('chatArea');
+  if (STATE.messages.length === 0) {
+    area.innerHTML = `
+    <div class="chat-empty">
+      <div class="empty-icon">💬</div>
+      <h3>开始今天的复盘吧</h3>
+      <p>随便写、随便说——今天做了什么、遇到什么问题、有什么发现。<br>写完我会像顾问一样追问你，帮你挖出更深的东西。</p>
+    </div>`;
+    return;
+  }
+
+  let html = '';
+  STATE.messages.forEach((msg, i) => {
+    if (msg.type === 'user') {
+      let imgHtml = '';
+      if (msg.images && msg.images.length > 0) {
+        imgHtml = '<div class="msg-images">' + msg.images.map(img => `<img src="${img}" class="msg-thumb">`).join('') + '</div>';
+      }
+      html += `<div class="msg msg-user"><div class="bubble">${escHtml(msg.content)}${imgHtml}</div><div class="msg-meta">${msg.time || ''}</div></div>`;
+    } else if (msg.type === 'ai') {
+      // report-context 不渲染（仅用于AI上下文，报告卡片已显示）
+      if (msg.subType === 'report-context') return;
+      const cls = msg.subType === 'inquiry' ? 'inquiry' : (msg.subType === 'report' ? 'report' : '');
+      html += `<div class="msg msg-ai ${cls}"><div class="bubble">${formatAiMessage(msg)}</div><div class="msg-meta">AI复盘搭档</div></div>`;
+    } else if (msg.type === 'report-card') {
+      html += renderReportCard(msg);
+    }
+  });
+
+  area.innerHTML = html;
+  area.scrollTop = area.scrollHeight;
+}
+
+function formatAiMessage(msg) {
+  return escHtml(msg.content);
+}
+
+function renderReportCard(msg) {
+  return `
+  <div class="report-card" style="align-self:stretch">
+    <div class="report-tabs">
+      <button class="report-tab active" onclick="switchReportTab(this,'external','${msg.id}')">对外展示版</button>
+      <button class="report-tab" onclick="switchReportTab(this,'sharp','${msg.id}')">自省犀利版</button>
+    </div>
+    <div class="report-body" id="report_${msg.id}_external">${msg.external || ''}</div>
+    <div class="report-body sharp" id="report_${msg.id}_sharp" style="display:none">${msg.sharp || ''}</div>
+    <div class="btn-group" style="margin-top:10px">
+      <button class="btn btn-outline btn-sm" onclick="copyText('${msg.id}','external')">📋 复制对外版</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadSingle('${msg.id}','external','对外展示版')">📥 下载对外版</button>
+      <span style="color:var(--border);margin:0 4px">|</span>
+      <button class="btn btn-outline btn-sm" onclick="copyText('${msg.id}','sharp')">📋 复制自省版</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadSingle('${msg.id}','sharp','自省犀利版')">📥 下载自省版</button>
+    </div>
+  </div>`;
+}
+
+function switchReportTab(btn, tab, id) {
+  btn.parentElement.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(`report_${id}_external`).style.display = tab === 'external' ? 'block' : 'none';
+  document.getElementById(`report_${id}_sharp`).style.display = tab === 'sharp' ? 'block' : 'none';
+}
+
+function copyText(id, type) {
+  const el = document.getElementById(`report_${id}_${type}`);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => showToast('已复制','success'));
+}
+
+function downloadSingle(id, type, label) {
+  const el = document.getElementById(`report_${id}_${type}`);
+  if (!el) return;
+  const content = `# ${getDateLabel()} 工作${getPeriodLabel()}总结 - ${label}\n\n${el.textContent}`;
+  const ext = type === 'sharp' ? 'md' : 'html';
+  const mime = type === 'sharp' ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8';
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${getDateLabel().replace(/[~\s]/g,'_')}_${label}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`已下载 ${label}`, 'success');
+}
+
+// ==================== 消息发送 ====================
+async function sendMessage() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  const hasImages = STATE.pendingImages.length > 0;
+  if ((!text && !hasImages) || STATE.isGenerating) return;
+
+  // 添加用户消息
+  const now = new Date();
+  const msg = {
+    type: 'user',
+    content: text,
+    images: hasImages ? [...STATE.pendingImages] : undefined,
+    time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+  };
+  STATE.messages.push(msg);
+
+  input.value = '';
+  STATE.pendingImages = [];
+  autoResize(input);
+  updateImagePreview();
+  saveCurrentSession();
+  renderChat();
+
+  // 调用AI
+  await aiRespond();
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function quickFill(text) {
+  const input = document.getElementById('userInput');
+  input.value = text;
+  input.focus();
+  autoResize(input);
+}
+
+// ==================== AI核心逻辑（嵌入老师prompt） ====================
+// 系统角色定义 —— 融合了老师那段prompt的精髓
+function getSystemPrompt() {
+  const periodName = STATE.period === 'daily' ? '每日' : STATE.period === 'weekly' ? '每周' : STATE.period === 'monthly' ? '每月' : '阶段性';
+  const periodLabel = getDateLabel();
+
+  return `你是我的「${periodName}工作复盘搭档」。你的核心任务是通过顾问式对话，帮我完成深度工作复盘。
+
+## 你的角色
+像一个资深管理顾问，帮我回忆、挖掘、反思工作。不要客套，不要敷衍。
+
+## 对话原则
+1. 每次回复先简短回应我的内容（1-2句话概括你的理解），然后提出追问。
+2. 追问必须严格基于我描述的内容，不允许凭空脑补、不允许脱离实际场景给出建议。
+3. 追问质量准则：
+   - 同一轮追问中，每个问题应探讨不同维度（如：一个问数据、一个问感受、一个问归因），避免换说法重复问同一个东西
+   - 必须可落地：你提的问题和建议，我在实际工作中能够执行
+   - 信息不足时，先确认背景再追问，不要基于假设给建议
+   - 如果我的内容很简短，追问少一些；内容丰富则追问可以多
+4. 追问要挖掘更深的东西：
+   - 我可能没注意到的规律或模式
+   - 被我自己忽略的亮点（跨部门协作、流程优化、带新人等）
+   - 潜在的盲区、隐患或逻辑漏洞
+   - 决策背后是否有可优化的思路
+5. 如果我回答得笼统，追问具体的数字和案例。
+6. 追问要有递进关系，从现象→归因→改进，逐步深入。
+7. 追问语气：直接、专业，像教练一样推动我思考，不客套但也不刻薄。
+
+## 业务边界（重要）
+- 我只能基于你说的事实来分析，不可虚构数据或假设不存在的场景。
+- 如果某个建议可能和你的实际业务冲突，先确认再建议。
+- 教育/培训场景中，退课率降低才是正向指标，不可建议"提升退课率"。
+- 不确定的业务术语或行业背景，先问我确认。
+
+## 当前时间维度
+${periodLabel} · ${periodName}复盘
+
+## 特别说明
+- 如果是日报：侧重当天的微发现、微信号、即时反思。内容少就少追问，内容多就多追问。
+- 如果是周报：侧重一周的模式和趋势，可以比日报追问更深入。
+- 如果是月报：深度模式分析，直击要害，追问可以更纵深。
+
+## 当我要求生成报告时
+如果我明确说"生成报告"或类似的话，请生成两份报告，格式如下：
+
+===对外展示版===
+[一份专业的${periodName}工作总结，适合直接给领导看]
+要求：
+- 用清晰的标题和分段组织，结构感强
+- 篇幅精炼，不要空洞的套话，每一段都有信息量
+- 语气自信专业但不浮夸，用事实说话
+- 结构：核心概述（1-2句）→ 重点工作（每项含：具体动作+产出+数据）→ 问题与改进（问题+措施+计划时间）→ 下${getPeriodLabel()}计划
+- 涉及多项数据对比时，用简洁的表格呈现（如：项目 | 数据 | 说明）
+- 数字尽量具体，不要模糊表述
+
+===自省犀利版===
+[这是给我自己看的，你的角色切换成「直指核心的私人教练」]
+关于"犀利"的定义：
+- 犀利 = 精准、一针见血、直指本质问题
+- 犀利 ≠ 刻薄或故意让人不舒服
+- 好的犀利是可验证的：你指出的问题配上具体依据，而不是泛泛的判断
+
+要求：
+- 表述清晰：每个结论后面跟上依据和逻辑推导，不要只说"你XX有问题"
+- 像一面镜子：让我看到自己看不到的东西，而不是告诉我我已经知道的事情
+1. 模式分析：从我的描述中，你看到了什么反复出现的工作模式或思维惯性？（不要笼统说"时间管理不好"，要说"你在XX类型的事情上总是先做A再想B"这种具体模式）
+2. 被忽略的问题：有哪些我没意识到的风险、盲区或短板？直接指出来，给出具体依据。
+3. 犀利N问：至少3个精准直击要害的问题。这些问题应该让我停下来认真思考，可能涉及我的优先级判断、自我认知偏差、潜在逃避等。不是"你觉得哪里可以改进"这种泛泛之问，而是"你这周花在XX上的时间占比60%，但XX对结果的实际贡献只有20%，你觉得这个比例合理吗？"这种有数据支撑的追问。
+4. 如果只改一件事：如果只能改变一件事来提升效果，你建议改什么？为什么是这一件？
+5. 行动建议：3-5条具体的、可执行的、有优先级的建议。
+
+现在开始对话吧。`;
+}
+
+async function aiRespond() {
+  if (!STATE.apiConfig.apiKey) {
+    STATE.messages.push({
+      type: 'ai',
+      content: '⚠️ 还没配置API Key，我暂时无法追问你。\n\n点击左侧「⚙️ API设置」配置后，我就可以像顾问一样帮你深度复盘了。推荐使用DeepSeek（deepseek-chat），便宜、中文好、国内直接访问。',
+      subType: 'system'
+    });
+    saveCurrentSession();
+    renderChat();
+    return;
+  }
+
+  STATE.isGenerating = true;
+  renderChat();
+  showTyping();
+
+  // 构建对话上下文
+  const messages = [{ role: 'system', content: getSystemPrompt() }];
+  STATE.messages.forEach(msg => {
+    if (msg.type === 'user') {
+      // 支持多模态：如果有图片且提供商支持vision，用数组格式
+      if (msg.images && msg.images.length > 0 && STATE.isVisionProvider) {
+        const parts = [{ type: 'text', text: msg.content || '请分析这张图片' }];
+        msg.images.forEach(img => {
+          parts.push({ type: 'image_url', image_url: { url: img } });
+        });
+        messages.push({ role: 'user', content: parts });
+      } else {
+        messages.push({ role: 'user', content: msg.content || '[图片]' });
+      }
+    } else if (msg.type === 'ai' && msg.subType !== 'system') {
+      messages.push({ role: 'assistant', content: msg.content });
+    }
+  });
+
+  // 检查是否是报告生成请求
+  const lastMsg = messages[messages.length - 1];
+  const lastContent = typeof lastMsg.content === 'string' ? lastMsg.content : (Array.isArray(lastMsg.content) ? lastMsg.content.find(p => p.type === 'text')?.text || '' : '');
+  const isReportRequest = /生成报告|出报告|总结一下|帮我总结|写周报|写日报|写月报/.test(lastContent);
+
+  try {
+    const response = await fetch(`${STATE.apiConfig.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.apiConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: STATE.apiConfig.model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: isReportRequest ? 3000 : 1200
+      })
+    });
+
+    removeTyping();
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(err);
+    }
+
+    const data = await response.json();
+    const aiText = data.choices?.[0]?.message?.content || '';
+
+    if (isReportRequest && (aiText.includes('===对外展示版===') || aiText.includes('===自省犀利版==='))) {
+      // 解析双报告
+      const parts = aiText.split(/===对外展示版===|===自省犀利版===/);
+      const external = (parts[1] || '').trim();
+      const sharp = (parts[2] || '').trim();
+
+      STATE.messages.push({
+        type: 'report-card',
+        id: 'r_' + Date.now(),
+        external: external,
+        sharp: sharp
+      });
+      // 同时把报告内容存入对话上下文，方便后续继续追问报告内容
+      STATE.messages.push({
+        type: 'ai',
+        content: '报告已生成。以下是我基于你的工作记录给出的分析总结，你可以针对报告中的任何部分继续追问：\n\n' + external + '\n\n---\n\n' + sharp,
+        subType: 'report-context'
+      });
+    } else {
+      STATE.messages.push({
+        type: 'ai',
+        content: aiText,
+        subType: 'inquiry'
+      });
+    }
+
+    saveCurrentSession();
+    STATE.isGenerating = false;
+    renderChat();
+  } catch (err) {
+    removeTyping();
+    const errMsg = err.message || String(err);
+    console.error('AI Error:', err);
+    const hint = errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')
+      ? '网络请求失败——飞书内置浏览器可能拦截了API请求，请用Chrome/Edge浏览器打开此工具。'
+      : errMsg.includes('401') || errMsg.includes('403')
+      ? 'API Key无效或未授权，请检查Key是否正确。'
+      : errMsg;
+    STATE.messages.push({
+      type: 'ai',
+      content: 'AI调用出错：' + hint,
+      subType: 'system'
+    });
+    saveCurrentSession();
+    STATE.isGenerating = false;
+    renderChat();
+  }
+}
+
+function showTyping() {
+  const area = document.getElementById('chatArea');
+  const typingHtml = '<div class="msg msg-ai" id="typingMsg"><div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div></div>';
+  area.insertAdjacentHTML('beforeend', typingHtml);
+  area.scrollTop = area.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingMsg');
+  if (el) el.remove();
+}
+
+async function generateReport() {
+  // 先检查是否有内容
+  const hasUserMsg = STATE.messages.some(m => m.type === 'user');
+  if (!hasUserMsg) {
+    showToast('请先输入一些工作内容', 'error');
+    return;
+  }
+
+  // 在输入框里填入"生成报告"然后发送
+  // 先检查是否已经有API key
+  if (!STATE.apiConfig.apiKey) {
+    showToast('请先在API设置中配置API Key', 'error');
+    return;
+  }
+
+  // 添加用户报告请求
+  STATE.messages.push({
+    type: 'user',
+    content: '请帮我生成报告（包含对外展示版和自省犀利版）。',
+    time: `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`
+  });
+  saveCurrentSession();
+  renderChat();
+  await aiRespond();
+}
+
+// ==================== 语音输入 ====================
+let recognition = null;
+let isRecording = false;
+let finalTranscript = '';
+let _voiceStopped = false;
+let _voiceToggling = false; // 防连点
+
+function toggleVoice() {
+  if (_voiceToggling) return;
+  _voiceToggling = true;
+  setTimeout(() => { _voiceToggling = false; }, 300);
+  
+  console.log('[语音] toggleVoice 被调用, isRecording=', isRecording);
+  
+  if (isRecording) {
+    _voiceStopped = true;
+    if (recognition) {
+      try { recognition.stop(); } catch(e) {}
+    }
+    return;
+  }
+
+  // 检查浏览器支持
+  const hasSR = !!('webkitSpeechRecognition' in window) || !!('SpeechRecognition' in window);
+  console.log('[语音] 浏览器支持语音识别:', hasSR);
+  if (!hasSR) {
+    showToast('浏览器不支持语音识别，请使用Chrome或Edge浏览器', 'error');
+    return;
+  }
+
+  _voiceStopped = false;
+  
+  // 保存输入框已有文字，语音识别结果将追加到后面
+  const inputEl = document.getElementById('userInput');
+  window._voicePrevText = inputEl ? inputEl.value : '';
+  finalTranscript = '';
+  
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    console.log('[语音] onstart - 录音已开始');
+    isRecording = true;
+    const btn = document.getElementById('voiceBtn');
+    if (btn) {
+      btn.classList.add('voice-active');
+      btn.textContent = '🔴';
+    }
+    const status = document.getElementById('voiceStatus');
+    if (status) status.textContent = '● 正在录音，说完点击按钮停止...';
+  };
+
+  recognition.onresult = (e) => {
+    console.log('[语音] onresult - 收到识别结果, resultIndex=', e.resultIndex, 'results长度=', e.results.length);
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const transcript = e.results[i][0].transcript;
+      console.log('[语音] 结果[' + i + '] final=' + e.results[i].isFinal + ' text="' + transcript + '"');
+      if (e.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    const input = document.getElementById('userInput');
+    if (input) {
+      input.value = (window._voicePrevText || '') + finalTranscript + interim;
+      autoResize(input);
+    } else {
+      console.warn('[语音] 找不到 #userInput 元素!');
+    }
+  };
+
+  recognition.onerror = (e) => {
+    console.error('[语音] onerror:', e.error, e.message);
+    _voiceStopped = true;
+    isRecording = false;
+    resetVoiceBtn();
+    if (e.error === 'not-allowed') showToast('请允许麦克风权限后重试', 'error');
+    else if (e.error === 'no-speech') showToast('未检测到语音，请重试', 'error');
+    else if (e.error === 'network') showToast('语音识别需要网络连接', 'error');
+    else if (e.error === 'aborted') console.log('[语音] 用户主动停止');
+    else showToast('语音识别出错: ' + e.error, 'error');
+  };
+
+  recognition.onend = () => {
+    console.log('[语音] onend - 录音结束, _voiceStopped=', _voiceStopped);
+    recognition = null;
+    isRecording = false;
+    resetVoiceBtn();
+    
+    if (!_voiceStopped) {
+      // 正常结束，语音内容已写入input，提示可编辑
+      const input = document.getElementById('userInput');
+      if (input && input.value.trim()) {
+        input.focus();
+        const status = document.getElementById('voiceStatus');
+        if (status) status.textContent = '语音已识别，编辑后可回车或点击 ➤ 发送';
+        setTimeout(() => {
+          const s = document.getElementById('voiceStatus');
+          if (s) s.textContent = '';
+        }, 3000);
+      }
+    }
+  };
+
+  try {
+    console.log('[语音] 调用 recognition.start()...');
+    recognition.start();
+    console.log('[语音] recognition.start() 成功');
+  } catch(e) {
+    console.error('[语音] start() 失败:', e);
+    recognition = null;
+    resetVoiceBtn();
+    showToast('语音启动失败: ' + e.message, 'error');
+  }
+}
+
+function resetVoiceBtn() {
+  const btn = document.getElementById('voiceBtn');
+  if (btn) {
+    btn.classList.remove('voice-active');
+    btn.textContent = '🎤';
+  }
+  const status = document.getElementById('voiceStatus');
+  if (status) status.textContent = '';
+}
+
+// 保留stopVoice兼容旧调用
+function stopVoice() {
+  _voiceStopped = true;
+  if (recognition) {
+    try { recognition.stop(); } catch(e) {}
+  }
+}
+
+// ==================== 文件上传 ====================
+const IMAGE_EXTS = ['jpg','jpeg','png','gif','bmp','webp','svg','ico','tiff','tif'];
+
+// API提供商预设
+const API_PROVIDERS = {
+  'deepseek': { name: 'DeepSeek', endpoint: 'https://api.deepseek.com/v1', model: 'deepseek-chat', vision: false },
+  'moonshot': { name: 'Moonshot (Kimi)', endpoint: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', vision: true },
+  'custom': { name: '自定义', endpoint: '', model: '', vision: false }
+};
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const area = document.getElementById('inputArea');
+  if (area) area.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const area = document.getElementById('inputArea');
+  if (area) area.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const area = document.getElementById('inputArea');
+  if (area) area.classList.remove('drag-over');
+  
+  const files = e.dataTransfer?.files;
+  if (files && files.length > 0) {
+    processFiles(files);
+  }
+}
+
+async function handleFileUpload(event) {
+  const files = event.target?.files;
+  if (!files || files.length === 0) return;
+  await processFiles(files);
+  if (event.target) event.target.value = '';
+}
+
+async function processFiles(files) {
+  const input = document.getElementById('userInput');
+  let extracted = '';
+  let imageCount = 0;
+
+  for (const file of files) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    
+    // 图片文件：如果当前提供商支持vision，转为base64加入待发送队列
+    if (IMAGE_EXTS.includes(ext)) {
+      if (STATE.isVisionProvider) {
+        try {
+          const base64 = await fileToBase64(file);
+          STATE.pendingImages.push(base64);
+          imageCount++;
+          showToast(`图片已添加: ${file.name}`, 'success');
+        } catch (e) {
+          showToast(`图片读取失败: ${file.name}`, 'error');
+        }
+      } else {
+        imageCount++;
+      }
+      continue;
+    }
+
+    try {
+      showToast(`处理: ${file.name}`, 'success');
+      const text = await extractText(file);
+      if (text.trim()) extracted += `\n\n[文件: ${file.name}]\n${text}\n`;
+    } catch (e) {
+      showToast(`无法读取: ${file.name}`, 'error');
+    }
+  }
+
+  if (imageCount > 0 && !STATE.isVisionProvider) {
+    showToast(`图片文件(${imageCount}个)暂不支持识别。切换为Kimi等视觉模型后可用`, 'error');
+  }
+
+  if (STATE.pendingImages.length > 0) {
+    updateImagePreview();
+  }
+
+  if (extracted && input) {
+    input.value = (input.value + extracted).trim();
+    autoResize(input);
+    showToast('内容已提取', 'success');
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function updateImagePreview() {
+  let preview = document.getElementById('imagePreview');
+  if (!preview) {
+    preview = document.createElement('div');
+    preview.id = 'imagePreview';
+    preview.className = 'image-preview-bar';
+    const inputArea = document.getElementById('inputArea');
+    inputArea.insertBefore(preview, inputArea.querySelector('.voice-status'));
+  }
+  if (STATE.pendingImages.length === 0) {
+    preview.innerHTML = '';
+    preview.style.display = 'none';
+  } else {
+    preview.style.display = 'flex';
+    preview.innerHTML = STATE.pendingImages.map((img,i) => 
+      `<div class="preview-item">
+        <img src="${img}">
+        <span class="preview-remove" onclick="removePendingImage(${i})">✕</span>
+      </div>`
+    ).join('');
+  }
+}
+
+function removePendingImage(i) {
+  STATE.pendingImages.splice(i, 1);
+  updateImagePreview();
+}
+
+async function extractText(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  
+  // 图片文件不支持识别
+  if (IMAGE_EXTS.includes(ext)) {
+    return '';
+  }
+  
+  if (ext === 'txt' || ext === 'md' || ext === 'csv') return await file.text();
+
+  if (ext === 'docx') {
+    const buf = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file('word/document.xml')?.async('string');
+    if (xml) {
+      const matches = xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+      return matches.map(m => m.replace(/<[^>]+>/g, '')).join('');
+    }
+    return '';
+  }
+
+  if (ext === 'xlsx' || ext === 'xls') {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    let text = '';
+    wb.SheetNames.forEach(name => {
+      text += `\n[${name}]\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}\n`;
+    });
+    return text;
+  }
+
+  return await file.text();
+}
+
+// ==================== 历史记录 ====================
+function showHistory() {
+  const entries = Object.entries(STATE.allData).sort((a,b) => (b[1].updatedAt||'') > (a[1].updatedAt||'') ? 1 : -1);
+
+  document.getElementById('mainApp').innerHTML = `
+  <div style="flex:1;overflow-y:auto;padding:20px 24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2>历史记录</h2>
+      <button class="btn btn-outline btn-sm" onclick="restoreMainView()">← 返回</button>
+    </div>
+    <div class="btn-group" style="margin-bottom:12px">
+      <button class="btn btn-outline btn-sm active" onclick="filterHist('all',this)">全部</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHist('daily',this)">日报</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHist('weekly',this)">周报</button>
+      <button class="btn btn-outline btn-sm" onclick="filterHist('monthly',this)">月报</button>
+    </div>
+    <input type="text" id="histSearch" placeholder="搜索..." oninput="filterHist()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:13px">
+    <div id="histList">
+    ${entries.length === 0 ? '<div style="text-align:center;padding:40px;color:var(--text-secondary)">暂无记录</div>' :
+    entries.map(([key,entry]) => `
+      <div class="history-item" data-period="${entry.period||''}" style="padding:14px 16px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="loadHistory('${key}')">
+        <div style="font-weight:600;font-size:14px">${entry.periodLabel||key}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">
+          ${(entry.messages||[]).filter(m=>m.type==='user').length} 条记录
+          <span class="tag" style="margin-left:8px;background:var(--primary-light);color:var(--primary);padding:2px 6px;border-radius:4px;font-size:10px">${entry.period==='daily'?'日报':entry.period==='weekly'?'周报':entry.period==='monthly'?'月报':'自定义'}</span>
+          ${entry.messages?.some(m=>m.type==='report-card') ? '<span style="margin-left:4px;color:var(--success);font-size:11px">已有报告</span>' : ''}
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+  window._histFilter = 'all';
+}
+
+function filterHist(filter, btn) {
+  if (btn) {
+    window._histFilter = filter;
+    document.querySelectorAll('#mainApp .btn-outline').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const search = (document.getElementById('histSearch')?.value||'').toLowerCase();
+  document.querySelectorAll('#histList .history-item').forEach(item => {
+    const p = item.dataset.period;
+    const t = item.textContent.toLowerCase();
+    item.style.display = (window._histFilter==='all'||p===window._histFilter) && (!search||t.includes(search)) ? 'block' : 'none';
+  });
+}
+
+function loadHistory(key) {
+  const entry = STATE.allData[key];
+  if (!entry) return;
+  STATE.messages = entry.messages || [];
+  STATE.period = entry.period || 'daily';
+  STATE.periodLabel = entry.periodLabel;
+  restoreMainView();
+  updateHeader();
+  renderChat();
+}
+
+function restoreMainView() {
+  document.getElementById('mainApp').innerHTML = `
+    <div class="main-header">
+      <button class="hamburger" onclick="toggleSidebar()" title="菜单">☰</button>
+      <div><h2 id="pageTitle">工作复盘</h2><div class="period-info" id="dateLabel"></div></div>
+      <div class="date-nav">
+        <button onclick="navigateDate(-1)">◀</button>
+        <button class="today-btn" onclick="goToday()">今天</button>
+        <button onclick="navigateDate(1)">▶</button>
+      </div>
+    </div>
+    <div class="chat-area" id="chatArea"></div>
+    <div class="input-area" id="inputArea" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+      <div class="input-row">
+        <textarea id="userInput" rows="1" placeholder="说说今天的工作...（支持语音输入 🎤）" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+        <div class="input-actions">
+          <button id="voiceBtn" onpointerdown="toggleVoice()" style="touch-action:manipulation">🎤</button>
+          <button onclick="document.getElementById('fileInput').click()">📎</button>
+          <input type="file" id="fileInput" accept=".txt,.md,.csv,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp,.webp" style="display:none" onchange="handleFileUpload(event)" multiple>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+        </div>
+      </div>
+      <div class="voice-status" id="voiceStatus"></div>
+      <div class="input-hint">
+        <span onclick="quickFill('今天回访了')">回访学员</span>
+        <span onclick="quickFill('今天卖了')">业绩</span>
+        <span onclick="quickFill('今天遇到一个问题')">问题</span>
+        <span onclick="quickFill('今天发现')">新发现</span>
+        <span onclick="quickFill('今天的反思')">反思</span>
+        <span>|</span>
+        <span onclick="generateReport()" style="font-weight:600">📄 生成报告</span>
+      </div>
+    </div>`;
+  updateHeader();
+  renderChat();
+  updateImagePreview(); // 恢复图片预览
+}
+
+// ==================== 设置 ====================
+function showSettings() {
+  const prov = STATE.apiConfig.provider;
+  const opts = Object.entries(API_PROVIDERS).map(([k,v]) => 
+    `<option value="${k}" ${k===prov?'selected':''}>${v.name}</option>`
+  ).join('');
+  document.getElementById('modalLayer').innerHTML = `
+  <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h3>⚙️ API设置</h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">
+        选择AI模型提供商，配置后可智能追问和生成报告。<br>
+        <b>DeepSeek</b>：便宜、中文好、国内直接访问，不支持图片分析。<br>
+        <b>Moonshot (Kimi)</b>：支持上传图片进行分析，国内直接访问。
+      </p>
+      <div class="form-group"><label>提供商</label>
+        <select id="apiProvider" onchange="onProviderChange()">${opts}</select>
+      </div>
+      <div class="form-group"><label>API Endpoint</label><input type="text" id="apiEndpoint" value="${escHtml(STATE.apiConfig.endpoint)}"></div>
+      <div class="form-group"><label>API Key</label><input type="password" id="apiKey" value="${escHtml(STATE.apiConfig.apiKey)}"></div>
+      <div class="form-group"><label>Model</label><input type="text" id="apiModel" value="${escHtml(STATE.apiConfig.model)}"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+        <button class="btn btn-outline" onclick="testApi()">测试连接</button>
+        <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      </div>
+      <div id="testResult" style="margin-top:12px;font-size:13px"></div>
+    </div>
+  </div>`;
+}
+
+function onProviderChange() {
+  const prov = document.getElementById('apiProvider').value;
+  const preset = API_PROVIDERS[prov];
+  if (preset && prov !== 'custom') {
+    document.getElementById('apiEndpoint').value = preset.endpoint;
+    document.getElementById('apiModel').value = preset.model;
+  }
+  // 自定义模式：不清空已有内容，让用户自由填写
+}
+
+function closeModal() { document.getElementById('modalLayer').innerHTML = ''; }
+
+function saveSettings() {
+  STATE.apiConfig.provider = document.getElementById('apiProvider')?.value || 'deepseek';
+  STATE.apiConfig.endpoint = document.getElementById('apiEndpoint')?.value || '';
+  STATE.apiConfig.apiKey = document.getElementById('apiKey')?.value || '';
+  STATE.apiConfig.model = document.getElementById('apiModel')?.value || '';
+  localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
+  localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
+  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
+  localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  closeModal();
+  showToast('设置已保存', 'success');
+}
+
+async function testApi() {
+  // 先保存当前输入的内容到STATE和localStorage，但不关闭弹窗
+  STATE.apiConfig.provider = document.getElementById('apiProvider')?.value || 'deepseek';
+  STATE.apiConfig.endpoint = document.getElementById('apiEndpoint')?.value || '';
+  STATE.apiConfig.apiKey = document.getElementById('apiKey')?.value || '';
+  STATE.apiConfig.model = document.getElementById('apiModel')?.value || '';
+  localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
+  localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
+  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
+  localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+
+  const el = document.getElementById('testResult');
+  el.innerHTML = '<span class="spinner"></span> 测试中...';
+  try {
+    const r = await fetch(`${STATE.apiConfig.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':`Bearer ${STATE.apiConfig.apiKey}`},
+      body: JSON.stringify({model:STATE.apiConfig.model,messages:[{role:'user',content:'回"连接成功"'}],max_tokens:10})
+    });
+    if (r.ok) el.innerHTML = '<span style="color:var(--success)">连接成功！</span>';
+    else el.innerHTML = `<span style="color:var(--danger)">失败：${(await r.text()).substring(0,200)}</span>`;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--danger)">网络错误：${e.message}</span>`;
+  }
+}
+
+// ==================== 导入导出 ====================
+function exportData() {
+  const blob = new Blob([JSON.stringify(STATE.allData,null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `工作复盘备份_${formatDate(new Date())}.json`;
+  a.click();
+  showToast('已导出','success');
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (confirm(`导入${Object.keys(data).length}条记录。合并(确定)还是覆盖(取消)？`)) {
+        Object.assign(STATE.allData, data);
+      } else {
+        STATE.allData = data;
+      }
+      saveData();
+      showToast('导入成功','success');
+    } catch(err) { showToast('格式错误','error'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ==================== 工具 ====================
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function showToast(msg,type) {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.getElementById('toastLayer').appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ==================== 启动 ====================
+function init() {
+  STATE.period = 'daily';
+  STATE.currentDate = new Date();
+  loadCurrentSession();
+  updateHeader();
+  renderChat();
+}
+init();
+</script>
+</body>
+</html>
