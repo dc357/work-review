@@ -31,6 +31,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .sidebar-header h1{font-size:17px;font-weight:700;color:var(--primary)}
 .sidebar-header p{font-size:11px;color:var(--text-secondary);margin-top:2px}
 .nav-label{padding:12px 20px 4px;font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.provider-switch{display:flex;align-items:center;gap:6px;padding:7px 14px;cursor:pointer;border-radius:8px;margin:2px 8px 6px;font-size:12px;transition:background .12s;position:relative}
+.provider-switch:hover{background:var(--bg)}
+.provider-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.provider-dot.active{background:#22c55e;box-shadow:0 0 4px rgba(34,197,94,.4)}
+.provider-dot.inactive{background:var(--border)}
+.provider-name{flex:1;color:var(--text);font-size:12px}
+.provider-arrow{font-size:9px;color:var(--text-secondary)}
+.provider-popup{position:absolute;bottom:100%;left:4px;right:4px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;overflow:hidden;display:none}
+.provider-popup.show{display:block}
+.provider-opt{padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:12px;transition:background .1s}
+.provider-opt:hover{background:var(--bg)}
+.provider-opt .opt-dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0}
+.provider-opt.current .opt-dot{background:#22c55e}
+.provider-opt .opt-name{flex:1}
 .nav-item{display:flex;align-items:center;gap:8px;padding:9px 20px;cursor:pointer;font-size:13px;color:var(--text);border:none;background:none;width:100%;text-align:left;transition:all .12s}
 .nav-item:hover{background:var(--primary-light);color:var(--primary)}
 .nav-item.active{background:var(--primary-light);color:var(--primary);font-weight:600;border-right:3px solid var(--primary)}
@@ -191,6 +205,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
       <span class="nav-icon">📋</span>自定义
     </button>
     <div class="nav-label">功能</div>
+    <div class="provider-switch" onclick="quickSwitchProvider()" title="快速切换AI模型">
+      <span class="provider-dot" id="providerDot"></span>
+      <span class="provider-name" id="providerName">DeepSeek</span>
+      <span class="provider-arrow">▾</span>
+    </div>
     <button class="nav-item" onclick="showHistory()">
       <span class="nav-icon">📁</span>历史记录
     </button>
@@ -1262,7 +1281,10 @@ function onProviderChange() {
     document.getElementById('apiEndpoint').value = preset.endpoint;
     document.getElementById('apiModel').value = preset.model;
   }
-  // 自定义模式：不清空已有内容，让用户自由填写
+  // 加载该提供商之前保存的Key
+  const savedKey = getProviderKey(prov);
+  if (savedKey) document.getElementById('apiKey').value = savedKey;
+  // 自定义模式：不自动清空endpoint和model
 }
 
 function closeModal() { document.getElementById('modalLayer').innerHTML = ''; }
@@ -1274,10 +1296,85 @@ function saveSettings() {
   STATE.apiConfig.model = document.getElementById('apiModel')?.value || '';
   localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
   localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
-  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
   localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  // 按提供商分别存储Key，方便快捷切换
+  const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
+  keys[STATE.apiConfig.provider] = STATE.apiConfig.apiKey;
+  if (STATE.apiConfig.provider === 'custom') {
+    // 自定义：额外存endpoint和model
+    const cfgs = JSON.parse(localStorage.getItem('ws_provider_cfgs') || '{}');
+    cfgs.custom = { endpoint: STATE.apiConfig.endpoint, model: STATE.apiConfig.model };
+    localStorage.setItem('ws_provider_cfgs', JSON.stringify(cfgs));
+  }
+  localStorage.setItem('ws_provider_keys', JSON.stringify(keys));
+  refreshProviderUI();
   closeModal();
   showToast('设置已保存', 'success');
+}
+
+function quickSwitchProvider() {
+  const popup = document.getElementById('providerPopup');
+  if (popup) { popup.classList.toggle('show'); return; }
+  // 首次创建弹出菜单
+  const div = document.createElement('div');
+  div.id = 'providerPopup';
+  div.className = 'provider-popup show';
+  div.innerHTML = Object.entries(API_PROVIDERS).map(([k,v]) => {
+    const isCurrent = k === STATE.apiConfig.provider;
+    const hasKey = !!getProviderKey(k);
+    return `<div class="provider-opt ${isCurrent?'current':''}" onclick="pickProvider('${k}');event.stopPropagation()">
+      <span class="opt-dot"></span><span class="opt-name">${v.name}${hasKey?'':' 🔒'}</span>
+    </div>`;
+  }).join('');
+  document.querySelector('.provider-switch').appendChild(div);
+  // 点击其他地方关闭
+  setTimeout(() => document.addEventListener('click', closeProviderPopup, { once: true }), 0);
+}
+
+function closeProviderPopup() {
+  const p = document.getElementById('providerPopup');
+  if (p) p.remove();
+}
+
+function getProviderKey(prov) {
+  // 先检查组内Key存储，再检查当前settings
+  const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
+  if (keys[prov]) return keys[prov];
+  if (prov === STATE.apiConfig.provider) return STATE.apiConfig.apiKey;
+  return '';
+}
+
+function pickProvider(prov) {
+  closeProviderPopup();
+  if (prov === STATE.apiConfig.provider) return;
+  if (!getProviderKey(prov)) {
+    showToast('请先在API设置中配置该提供商的Key', 'error');
+    showSettings();
+    return;
+  }
+  // 切换提供商
+  const preset = API_PROVIDERS[prov];
+  STATE.apiConfig.provider = prov;
+  STATE.apiConfig.apiKey = getProviderKey(prov);
+  STATE.apiConfig.endpoint = (prov === 'custom') 
+    ? (JSON.parse(localStorage.getItem('ws_provider_cfgs') || '{}').custom?.endpoint || '')
+    : (preset?.endpoint || '');
+  STATE.apiConfig.model = (prov === 'custom')
+    ? (JSON.parse(localStorage.getItem('ws_provider_cfgs') || '{}').custom?.model || '')
+    : (preset?.model || '');
+  localStorage.setItem('ws_api_provider', prov);
+  localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
+  localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  refreshProviderUI();
+  showToast(`已切换至 ${preset?.name || '自定义'}`, 'success');
+}
+
+function refreshProviderUI() {
+  const dot = document.getElementById('providerDot');
+  const name = document.getElementById('providerName');
+  const prov = STATE.apiConfig.provider;
+  if (dot) dot.className = 'provider-dot ' + (getProviderKey(prov) ? 'active' : 'inactive');
+  if (name) name.textContent = API_PROVIDERS[prov]?.name || '自定义';
 }
 
 async function testApi() {
@@ -1288,8 +1385,11 @@ async function testApi() {
   STATE.apiConfig.model = document.getElementById('apiModel')?.value || '';
   localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
   localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
-  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
   localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
+  keys[STATE.apiConfig.provider] = STATE.apiConfig.apiKey;
+  localStorage.setItem('ws_provider_keys', JSON.stringify(keys));
+  refreshProviderUI();
 
   const el = document.getElementById('testResult');
   el.innerHTML = '<span class="spinner"></span> 测试中...';
@@ -1350,6 +1450,7 @@ function showToast(msg,type) {
 function init() {
   STATE.period = 'daily';
   STATE.currentDate = new Date();
+  refreshProviderUI();
   loadCurrentSession();
   updateHeader();
   renderChat();
