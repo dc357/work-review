@@ -306,6 +306,7 @@ const STATE = {
     model: localStorage.getItem('ws_api_model') || 'deepseek-chat'
   },
   get isVisionProvider() { return API_PROVIDERS[this.apiConfig.provider]?.vision || false; },
+  localTranscribe: { enabled: false, url: 'http://localhost:8765' },
   allData: JSON.parse(localStorage.getItem('ws_all_data') || '{}'),
   messages: [], // 当前对话历史
   pendingImages: [], // 待发送的图片(base64)
@@ -314,6 +315,32 @@ const STATE = {
 };
 
 function saveData() { localStorage.setItem('ws_all_data', JSON.stringify(STATE.allData)); }
+function toggleLocalTranscribe() {
+  STATE.localTranscribe.enabled = !STATE.localTranscribe.enabled;
+  localStorage.setItem("ws_local_trans", STATE.localTranscribe.enabled);
+  updateLocalTransUI();
+  if (STATE.localTranscribe.enabled) {
+    showToast("本地转录已开启，音频将发送到本地 Whisper 服务转文字", "success");
+  } else {
+    showToast("本地转录已关闭", "info");
+  }
+}
+
+function updateLocalTransUI() {
+  var icon = document.getElementById("localTransIcon");
+  var status = document.getElementById("localTransStatus");
+  if (icon && status) {
+    if (STATE.localTranscribe.enabled) {
+      icon.textContent = "\uD83D\uDD0A";
+      status.textContent = "已开启";
+      status.style.color = "#22c55e";
+    } else {
+      icon.textContent = "\uD83D\uDD07";
+      status.textContent = "未启动";
+      status.style.color = "";
+    }
+  }
+}
 
 function formatDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
@@ -997,8 +1024,23 @@ async function processFiles(files) {
   for (const file of files) {
     const ext = file.name.split('.').pop().toLowerCase();
     
-    // 音频文件：Kimi需要上传到服务器获取文件ID
+    // 音频文件：优先本地转录，其次Kimi上传
     if (AUDIO_EXTS.includes(ext)) {
+      if (STATE.localTranscribe.enabled) {
+        try {
+          showToast(`正在本地转录: ${file.name}...`, 'success');
+          var text = await transcribeLocally(file);
+          if (text && text.trim()) {
+            extracted += '\n\n[音频转录: ' + file.name + ']\n' + text + '\n';
+            showToast(`转录完成: ${file.name}`, 'success');
+          } else {
+            showToast(`转录结果为空: ${file.name}`, 'error');
+          }
+        } catch (e) {
+          showToast(`本地转录失败: ${e.message}。请确认本地服务已启动`, 'error');
+        }
+        continue;
+      }
       if (STATE.apiConfig.provider === 'moonshot') {
         try {
           showToast(`正在上传音频: ${file.name}...`, 'success');
@@ -1070,6 +1112,18 @@ async function processFiles(files) {
 }
 
 // 上传文件到Kimi服务器
+async function transcribeLocally(file) {
+  var fd = new FormData();
+  fd.append('file', file);
+  var r = await fetch(STATE.localTranscribe.url + '/api/transcribe', {
+    method: 'POST', body: fd
+  });
+  if (!r.ok) { var e = await r.text(); throw new Error(e); }
+  var j = await r.json();
+  if (!j.success) throw new Error(j.error || 'transcribe failed');
+  return j.text;
+}
+
 async function uploadFileToKimi(file) {
   const formData = new FormData();
   formData.append('file', file);
