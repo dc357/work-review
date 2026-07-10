@@ -1029,7 +1029,7 @@ async function processFiles(files) {
       if (STATE.localTranscribe.enabled) {
         try {
           showToast(`正在本地转录: ${file.name}...`, 'success');
-          var text = await transcribeLocally(file);
+          var text = await transcribeWithIflytek(file);
           if (text && text.trim()) {
             extracted += '\n\n[音频转录: ' + file.name + ']\n' + text + '\n';
             showToast(`转录完成: ${file.name}`, 'success');
@@ -1111,6 +1111,66 @@ async function processFiles(files) {
   }
 }
 
+// 讯飞语音转写API
+async function transcribeWithIflytek(file) {
+  const APPID = '1feb3b57';
+  const APIKey = '1ceeb4be552e7e1d480ef55de09f4a03';
+  const APISecret = 'NmIwNDdmODM0YWM5ZTNlNjZiMWU2NWVj';
+  
+  // Step 1: 获取上传参数
+  const ts = Math.floor(Date.now() / 1000);
+  const signa = await getIflytekSigna(APPID, APIKey, APISecret, ts);
+  
+  // Step 2: 上传文件
+  const uploadUrl = `https://raasr.xfyun.cn/v2/api/upload?appid=${APPID}&signa=${signa}&ts=${ts}`;
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('fileName', file.name);
+  
+  const upRes = await fetch(uploadUrl, { method: 'POST', body: fd });
+  const upJson = await upRes.json();
+  if (upJson.code !== 0) throw new Error(upJson.desc || '上传失败');
+  
+  const orderId = upJson.content.orderId;
+  
+  // Step 3: 轮询获取结果
+  const resultUrl = `https://raasr.xfyun.cn/v2/api/getResult?appid=${APPID}&signa=${signa}&ts=${ts}&orderId=${orderId}&resultType=transfer`;
+  
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const resRes = await fetch(resultUrl);
+    const resJson = await resRes.json();
+    if (resJson.code !== 0) continue;
+    if (resJson.content.orderInfo.status === 4) {
+      // 完成
+      const lattice = JSON.parse(resJson.content.orderResult);
+      let text = '';
+      for (const item of lattice) {
+        for (const one of item.lattice) {
+          const json = JSON.parse(one.json_1best);
+          for (const rt of json.st.rt) {
+            for (const ws of rt.ws) {
+              text += ws.cw[0].w;
+            }
+          }
+        }
+      }
+      return text;
+    }
+  }
+  throw new Error('转写超时');
+}
+
+async function getIflytekSigna(appid, apiKey, apiSecret, ts) {
+  const baseString = appid + ts;
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(apiSecret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(baseString));
+  const signa = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  return encodeURIComponent(signa);
+}
 // 上传文件到Kimi服务器
 async function transcribeLocally(file) {
   var fd = new FormData();
