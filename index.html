@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -319,7 +319,7 @@ function toggleLocalTranscribe() {
   STATE.localTranscribe.enabled = !STATE.localTranscribe.enabled;
   localStorage.setItem("ws_local_trans", STATE.localTranscribe.enabled);
   updateLocalTransUI();
-  if (STATE.localTranscribe.enabled) {
+  if (true) { // 默认启用讯飞语音转写
     showToast("本地转录已开启，音频将发送到本地 Whisper 服务转文字", "success");
   } else {
     showToast("本地转录已关闭", "info");
@@ -330,7 +330,7 @@ function updateLocalTransUI() {
   var icon = document.getElementById("localTransIcon");
   var status = document.getElementById("localTransStatus");
   if (icon && status) {
-    if (STATE.localTranscribe.enabled) {
+    if (true) { // 默认启用讯飞语音转写
       icon.textContent = "\uD83D\uDD0A";
       status.textContent = "已开启";
       status.style.color = "#22c55e";
@@ -1026,7 +1026,7 @@ async function processFiles(files) {
     
     // 音频文件：优先本地转录，其次Kimi上传
     if (AUDIO_EXTS.includes(ext)) {
-      if (STATE.localTranscribe.enabled) {
+      if (true) { // 默认启用讯飞语音转写
         try {
           showToast(`正在本地转录: ${file.name}...`, 'success');
           var text = await transcribeWithIflytek(file);
@@ -1618,3 +1618,4 @@ init();
 </script>
 </body>
 </html>
+
