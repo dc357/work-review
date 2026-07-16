@@ -605,10 +605,16 @@ function buildPosterHTML(title, rawText) {
       tableHTML += '</table>';
     }
 
-    // 列表项
+    // 列表项 - 处理加粗标记 **text**
     let itemsHTML = '';
     if (sec.items.length > 0) {
-      itemsHTML = '<ul>' + sec.items.map(it => `<li>${it}</li>`).join('') + '</ul>';
+      itemsHTML = '<ul>' + sec.items.map(it => {
+        // 把 **text** 转换成 <strong>text</strong>
+        let formatted = it.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // 去掉残留的单个星号
+        formatted = formatted.replace(/\*\s*/g, '');
+        return `<li>${formatted}</li>`;
+      }).join('') + '</ul>';
     }
 
     if (sec.title || itemsHTML || tableHTML) {
