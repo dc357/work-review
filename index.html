@@ -93,9 +93,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .report-tabs{display:flex;gap:0;margin-bottom:12px;border-bottom:2px solid var(--border)}
 .report-tab{padding:8px 16px;cursor:pointer;font-size:13px;color:var(--text-secondary);border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px}
 .report-tab.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
-.report-body{font-size:13px;line-height:1.9;white-space:pre-wrap}
-.report-body.sharp{background:#1a1a2e;color:#e2e8f0;padding:20px;border-radius:8px;font-size:13px;line-height:2}
-.report-body.sharp h3{color:#f59e0b;margin:12px 0 6px}
+.report-body{font-size:14px;line-height:1.9;color:#334155}
+.report-body h2{font-size:17px;font-weight:600;color:#1e293b;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0}
+.report-body h3{font-size:15px;font-weight:600;color:#334155;margin:14px 0 6px}
+.report-body h4{font-size:14px;font-weight:600;color:#475569;margin:10px 0 4px}
+.report-body p{margin:6px 0}
+.report-body strong{color:#1e293b;font-weight:600}
+.report-body em{font-style:normal;color:#3b82f6;font-weight:600}
+.report-body ul{margin:4px 0;padding-left:18px}
+.report-body ul li{margin:3px 0;line-height:1.8}
+.report-body hr{border:none;border-top:1px solid #e2e8f0;margin:14px 0}
+.report-body table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+.report-body th{background:#f1f5f9;color:#475569;padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e2e8f0}
+.report-body td{padding:8px 12px;border-bottom:1px solid #f1f5f9;color:#334155}
+.report-body tr:last-child td{border-bottom:none}
+.report-body tr:nth-child(even) td{background:#fafbfc}
+.report-body.sharp{background:#1a1a2e;color:#cbd5e1;padding:20px;border-radius:8px;font-size:14px;line-height:2}
+.report-body.sharp h2{font-size:17px;font-weight:600;color:#f59e0b;margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid #334155}
+.report-body.sharp h3{font-size:15px;font-weight:600;color:#f59e0b;margin:14px 0 6px}
+.report-body.sharp h4{font-size:14px;font-weight:600;color:#fbbf24;margin:10px 0 4px}
+.report-body.sharp p{margin:6px 0;color:#cbd5e1}
+.report-body.sharp strong{color:#f1f5f9;font-weight:600}
+.report-body.sharp em{font-style:normal;color:#f59e0b;font-weight:600}
+.report-body.sharp ul li{color:#cbd5e1}
+.report-body.sharp hr{border-color:#334155}
+.report-body.sharp th{background:#1e293b;color:#94a3b8;border-color:#334155}
+.report-body.sharp td{color:#cbd5e1;border-color:#334155}
+.report-body.sharp tr:nth-child(even) td{background:#1e293b}
 .report-body.sharp .sharp-q{background:#2d2d44;padding:10px 14px;border-radius:6px;margin:6px 0;border-left:3px solid #ef4444}
 
 /* 底部输入区 */
@@ -294,6 +318,32 @@ document.querySelector('.sidebar').addEventListener('click', function(e) {
 });
 
 // ==================== 状态管理 ====================
+function _migrateLegacyConfig() {
+  // 迁移旧版 DeepSeek 配置（2026-07-24 废弃 deepseek-chat/reasoner）
+  const model = localStorage.getItem('ws_api_model');
+  if (model === 'deepseek-chat' || model === 'deepseek-reasoner') {
+    localStorage.setItem('ws_api_model', 'deepseek-v4-flash');
+    console.log('[Config] Migrated model:', model, '-> deepseek-v4-flash');
+  }
+  const endpoint = localStorage.getItem('ws_api_endpoint');
+  if (endpoint === 'https://api.deepseek.com/v1') {
+    localStorage.setItem('ws_api_endpoint', 'https://api.deepseek.com');
+    console.log('[Config] Migrated endpoint: /v1 -> (none)');
+  }
+}
+function _loadApiKey() {
+  // 优先从 ws_api_key 读取，为空则从 ws_provider_keys 恢复
+  let key = localStorage.getItem('ws_api_key') || '';
+  if (!key) {
+    const prov = localStorage.getItem('ws_api_provider') || 'deepseek';
+    const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
+    key = keys[prov] || '';
+    if (key) localStorage.setItem('ws_api_key', key);
+  }
+  return key;
+}
+// 页面加载时立即执行迁移
+_migrateLegacyConfig();
 const STATE = {
   period: 'daily',
   currentDate: new Date(),
@@ -301,9 +351,9 @@ const STATE = {
   customEnd: null,
   apiConfig: {
     provider: localStorage.getItem('ws_api_provider') || 'deepseek',
-    endpoint: localStorage.getItem('ws_api_endpoint') || 'https://api.deepseek.com/v1',
-    apiKey: localStorage.getItem('ws_api_key') || '',
-    model: localStorage.getItem('ws_api_model') || 'deepseek-chat'
+    endpoint: localStorage.getItem('ws_api_endpoint') || 'https://api.deepseek.com',
+    apiKey: _loadApiKey(),
+    model: localStorage.getItem('ws_api_model') || 'deepseek-v4-flash'
   },
   get isVisionProvider() { return API_PROVIDERS[this.apiConfig.provider]?.vision || false; },
   localTranscribe: { enabled: false, url: 'http://localhost:8765' },
@@ -484,18 +534,116 @@ function renderChat() {
 }
 
 function formatAiMessage(msg) {
-  return escHtml(msg.content);
+  // 追问消息用简单 markdown 渲染
+  return renderSimpleMarkdown(msg.content);
+}
+
+// 将简单 Markdown 转为 HTML（用于聊天界面内展示）
+function renderSimpleMarkdown(text) {
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false;
+  let inTable = false;
+  let tableRows = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    if (!line) { html += '<br>'; continue; }
+
+    // --- 分隔线
+    if (/^-{3,}$/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<hr>';
+      continue;
+    }
+
+    // 标题
+    if (/^###\s/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      line = formatInlineMd(escHtml(line.replace(/^###\s*/, '')));
+      html += `<h4>${line}</h4>`;
+      continue;
+    }
+    if (/^##\s/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      line = formatInlineMd(escHtml(line.replace(/^##\s*/, '')));
+      html += `<h3>${line}</h3>`;
+      continue;
+    }
+    if (/^#\s/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      line = formatInlineMd(escHtml(line.replace(/^#\s*/, '')));
+      html += `<h2>${line}</h2>`;
+      continue;
+    }
+
+    // 表格
+    if (line.startsWith('|')) {
+      if (/^\|[\s\-:|]+\|$/.test(line)) { tableRows.push(null); continue; }
+      if (inList) { html += '</ul>'; inList = false; }
+      const cells = line.split('|').filter(c => c.trim());
+      tableRows.push(cells.map(c => formatInlineMd(escHtml(c.trim()))));
+      if (!inTable) { inTable = true; }
+      continue;
+    } else if (inTable) {
+      // 表格结束，渲染
+      html += '<table>';
+      tableRows.forEach((row, ri) => {
+        if (!row) return; // 跳过分隔行
+        const tag = ri === 0 ? 'th' : 'td';
+        html += '<tr>' + row.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+      });
+      html += '</table>';
+      tableRows = [];
+      inTable = false;
+    }
+
+    // 列表项
+    if (/^[-*·]\s/.test(line) || /^\d+\.\s/.test(line)) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      line = formatInlineMd(escHtml(line.replace(/^[\d]+\.\s*/, '').replace(/^[-*·]\s*/, '')));
+      html += `<li>${line}</li>`;
+      continue;
+    }
+
+    // 普通段落
+    if (inList) { html += '</ul>'; inList = false; }
+    line = formatInlineMd(escHtml(line));
+    html += `<p>${line}</p>`;
+  }
+
+  if (inList) html += '</ul>';
+  if (inTable && tableRows.length > 0) {
+    html += '<table>';
+    tableRows.forEach((row, ri) => {
+      if (!row) return;
+      const tag = ri === 0 ? 'th' : 'td';
+      html += '<tr>' + row.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+    });
+    html += '</table>';
+  }
+
+  return html;
+}
+
+function formatInlineMd(text) {
+  // 先处理加粗，再处理斜体，对内容做 HTML 转义防止 XSS
+  return text
+    .replace(/\*\*(.+?)\*\*/g, (m, p1) => `<strong>${escHtml(p1)}</strong>`)
+    .replace(/\*(.+?)\*/g, (m, p1) => `<em>${escHtml(p1)}</em>`);
 }
 
 function renderReportCard(msg) {
+  const externalHTML = renderSimpleMarkdown(msg.external || '');
+  const sharpHTML = renderSimpleMarkdown(msg.sharp || '');
   return `
   <div class="report-card" style="align-self:stretch">
     <div class="report-tabs">
       <button class="report-tab active" onclick="switchReportTab(this,'external','${msg.id}')">对外展示版</button>
       <button class="report-tab" onclick="switchReportTab(this,'sharp','${msg.id}')">自省犀利版</button>
     </div>
-    <div class="report-body" id="report_${msg.id}_external">${msg.external || ''}</div>
-    <div class="report-body sharp" id="report_${msg.id}_sharp" style="display:none">${msg.sharp || ''}</div>
+    <div class="report-body" id="report_${msg.id}_external">${externalHTML}</div>
+    <div class="report-body sharp" id="report_${msg.id}_sharp" style="display:none">${sharpHTML}</div>
     <div class="btn-group" style="margin-top:10px">
       <button class="btn btn-outline btn-sm" onclick="copyText('${msg.id}','external')">📋 复制对外版</button>
       <button class="btn btn-outline btn-sm" onclick="downloadSingle('${msg.id}','external','对外展示版')">📥 下载对外版</button>
@@ -549,49 +697,87 @@ function downloadSingle(id, type, label) {
   showToast(`已下载 ${label}`, 'success');
 }
 
+// 处理行内 Markdown：**加粗**、*斜体*、清除残留星号
+function renderInlineMarkdown(text) {
+  let out = text;
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // 清除残留的单个星号（不在 <strong> 或 <em> 内的）
+  out = out.replace(/(?<!<strong)(?<!<em)(?<!<\/strong)(?<!<\/em)\*(?!\>)/g, '');
+  return out;
+}
+
 function buildPosterHTML(title, rawText) {
   // 把原始文本按段落和标题解析
-  const lines = rawText.split('\n').filter(l => l.trim());
+  const lines = rawText.split('\n');
   let sections = [];
   let currentSection = null;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // 检测标题行（## 开头或 **...** 等加粗开头可能为小标题）
+  // 先过滤：合并连续的段落文本、识别 --- 分隔线
+  const processedLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    // --- 分隔线单独标记
+    if (/^-{3,}$/.test(trimmed)) {
+      processedLines.push({ type: 'hr' });
+      continue;
+    }
+    processedLines.push({ type: 'text', content: trimmed });
+  }
+
+  for (const item of processedLines) {
+    if (item.type === 'hr') {
+      // 分隔线：拆分 section
+      if (currentSection) {
+        sections.push(currentSection);
+        currentSection = null;
+      }
+      continue;
+    }
+    const trimmed = item.content;
+
+    // 检测标题行（## 开头或 **...** 全行加粗）
     if (/^##\s/.test(trimmed)) {
-      currentSection = { title: trimmed.replace(/^##\s*/, ''), items: [] };
-      sections.push(currentSection);
+      if (currentSection) sections.push(currentSection);
+      let title = trimmed.replace(/^##\s*/, '');
+      title = renderInlineMarkdown(title);
+      currentSection = { title: title, items: [] };
     } else if (/^#{1,3}\s/.test(trimmed)) {
-      currentSection = { title: trimmed.replace(/^#{1,3}\s*/, ''), items: [] };
-      sections.push(currentSection);
+      if (currentSection) sections.push(currentSection);
+      let title = trimmed.replace(/^#{1,3}\s*/, '');
+      title = renderInlineMarkdown(title);
+      currentSection = { title: title, items: [] };
     } else if (trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length < 60) {
-      currentSection = { title: trimmed.replace(/\*\*/g, ''), items: [] };
-      sections.push(currentSection);
+      // 整行加粗 → 视为标题
+      if (currentSection) sections.push(currentSection);
+      let title = renderInlineMarkdown(trimmed);
+      currentSection = { title: title, items: [] };
     } else if (trimmed.startsWith('|') && trimmed.includes('|', 1)) {
-      // 检测表格行
-      if (!currentSection) { currentSection = { title: '', items: [] }; sections.push(currentSection); }
+      // 表格行，跳过纯分隔行（如 |---|---|）
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) continue;
+      if (!currentSection) { currentSection = { title: '', items: [] }; }
       if (!currentSection._tableRows) currentSection._tableRows = [];
       currentSection._tableRows.push(trimmed);
     } else if (trimmed.startsWith('- ') || trimmed.startsWith('· ') || /^\d+\.\s/.test(trimmed)) {
-      if (!currentSection) { currentSection = { title: '', items: [] }; sections.push(currentSection); }
-      currentSection.items.push(trimmed.replace(/^[\d]+\.\s*/, '').replace(/^[-·]\s*/, ''));
+      if (!currentSection) { currentSection = { title: '', items: [] }; }
+      let itemText = trimmed.replace(/^[\d]+\.\s*/, '').replace(/^[-·]\s*/, '');
+      itemText = renderInlineMarkdown(itemText);
+      currentSection.items.push({ type: 'li', text: itemText });
     } else {
-      if (!currentSection) { currentSection = { title: '概述', items: [] }; sections.push(currentSection); }
-      currentSection.items.push(trimmed);
+      if (!currentSection) { currentSection = { title: '', items: [] }; }
+      currentSection.items.push({ type: 'p', text: renderInlineMarkdown(trimmed) });
     }
   }
-
-  // 如果没有解析出section，全部放概述
+  if (currentSection) sections.push(currentSection);
   if (sections.length === 0) {
-    sections = [{ title: '', items: lines.filter(l => l.trim()) }];
+    sections = [{ title: '', items: [{ type: 'p', text: rawText }] }];
   }
 
-  // 生成色块卡片
-  const colors = ['#4f6ef7','#6c5ce7','#00b894','#e17055','#0984e3','#fdcb6e','#e84393'];
+  // 生成报告内容
   let sectionCards = '';
   sections.forEach((sec, i) => {
     if (!sec.title && sec.items.length === 0 && (!sec._tableRows || sec._tableRows.length === 0)) return;
-    const color = colors[i % colors.length];
 
     // 表格
     let tableHTML = '';
@@ -600,28 +786,43 @@ function buildPosterHTML(title, rawText) {
       sec._tableRows.forEach((row, ri) => {
         const cells = row.split('|').filter(c => c.trim());
         const tag = ri === 0 ? 'th' : 'td';
-        tableHTML += '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+        tableHTML += '<tr>' + cells.map(c => {
+          return `<${tag}>${renderInlineMarkdown(c.trim())}</${tag}>`;
+        }).join('') + '</tr>';
       });
       tableHTML += '</table>';
     }
 
-    // 列表项 - 处理加粗标记 **text**
+    // 列表项 / 段落
     let itemsHTML = '';
     if (sec.items.length > 0) {
-      itemsHTML = '<ul>' + sec.items.map(it => {
-        // 把 **text** 转换成 <strong>text</strong>
-        let formatted = it.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        // 去掉残留的单个星号
-        formatted = formatted.replace(/\*\s*/g, '');
-        return `<li>${formatted}</li>`;
-      }).join('') + '</ul>';
+      // 检查是否全是列表项
+      const allLi = sec.items.every(it => it.type === 'li');
+      if (allLi) {
+        itemsHTML = '<ul>' + sec.items.map(it => `<li>${it.text}</li>`).join('') + '</ul>';
+      } else {
+        // 混合：逐条渲染，列表项用 li，段落用 p
+        let mixed = '';
+        let inList = false;
+        for (const it of sec.items) {
+          if (it.type === 'li') {
+            if (!inList) { mixed += '<ul>'; inList = true; }
+            mixed += `<li>${it.text}</li>`;
+          } else {
+            if (inList) { mixed += '</ul>'; inList = false; }
+            mixed += `<p>${it.text}</p>`;
+          }
+        }
+        if (inList) mixed += '</ul>';
+        itemsHTML = mixed;
+      }
     }
 
     if (sec.title || itemsHTML || tableHTML) {
       sectionCards += `
-      <div class="card">
-        ${sec.title ? `<div class="card-head" style="background:${color}">${sec.title}</div>` : ''}
-        <div class="card-body">
+      <div class="section">
+        ${sec.title ? `<h2 class="section-title">${sec.title}</h2>` : ''}
+        <div class="section-body">
           ${itemsHTML}
           ${tableHTML}
         </div>
@@ -637,39 +838,72 @@ function buildPosterHTML(title, rawText) {
 <title>${title}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:#f0f2f7;display:flex;justify-content:center;padding:40px 16px}
-.poster{max-width:750px;width:100%}
-.header{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);color:#fff;padding:40px 36px 32px;border-radius:16px 16px 0 0;text-align:center}
-.header .date{font-size:14px;opacity:.7;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
-.header h1{font-size:28px;font-weight:700;letter-spacing:1px}
-.header .sub{font-size:15px;opacity:.6;margin-top:6px}
-.body-area{background:#fff;padding:32px 36px;border-radius:0 0 16px 16px;box-shadow:0 4px 24px rgba(0,0,0,.06)}
-.card{margin-bottom:22px;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.05)}
-.card-head{color:#fff;padding:12px 20px;font-size:16px;font-weight:600;letter-spacing:.5px}
-.card-body{padding:16px 20px;background:#fafbfd;font-size:15px;line-height:1.8;color:#333}
-.card-body ul{list-style:none;padding:0}
-.card-body ul li{padding:5px 0 5px 20px;position:relative}
-.card-body ul li::before{content:'';position:absolute;left:4px;top:14px;width:6px;height:6px;border-radius:50%;background:#4f6ef7}
-.card-body ul li:last-child{border-bottom:none}
-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px}
-th{background:#4f6ef7;color:#fff;padding:10px 12px;text-align:left;font-weight:600}
-td{padding:10px 12px;border-bottom:1px solid #e8ecf1}
-tr:nth-child(even) td{background:#f7f9fc}
-.footer{text-align:center;padding:24px;color:#999;font-size:12px;letter-spacing:1px}
-@media print{body{background:#fff;padding:0}.poster{max-width:100%}.header{border-radius:0}.body-area{box-shadow:none;border-radius:0}}
+body{font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;background:#f4f5f7;display:flex;justify-content:center;padding:48px 20px;color:#1e293b}
+.poster{max-width:780px;width:100%;background:#fff;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.04);overflow:hidden}
+
+/* 页头 */
+.header{background:#1e293b;color:#fff;padding:44px 48px 36px;position:relative;overflow:hidden}
+.header::after{content:'';position:absolute;top:0;right:0;width:120px;height:120px;background:rgba(255,255,255,.03);border-radius:0 0 0 120px}
+.header .date{font-size:12px;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+.header h1{font-size:26px;font-weight:600;letter-spacing:.5px;line-height:1.4}
+.header .sub{font-size:13px;color:#64748b;margin-top:8px;font-weight:400}
+
+/* 正文区 */
+.body-area{padding:40px 48px 32px}
+
+/* 板块 */
+.section{margin-bottom:32px}
+.section:last-child{margin-bottom:0}
+
+/* 板块标题 */
+.section-title{font-size:17px;font-weight:600;color:#1e293b;padding-bottom:10px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;position:relative}
+.section-title::after{content:'';position:absolute;bottom:-2px;left:0;width:40px;height:2px;background:#3b82f6}
+
+/* 板块正文 */
+.section-body{font-size:15px;line-height:1.85;color:#334155}
+.section-body p{margin-bottom:10px}
+.section-body p:last-child{margin-bottom:0}
+.section-body strong{color:#1e293b;font-weight:600}
+
+/* 列表 */
+.section-body ul{list-style:none;padding:0;margin:6px 0}
+.section-body ul li{padding:6px 0 6px 18px;position:relative;line-height:1.75}
+.section-body ul li::before{content:'';position:absolute;left:2px;top:15px;width:5px;height:5px;border-radius:50%;background:#3b82f6}
+.section-body ul ul{padding-left:16px}
+.section-body ul ul li::before{width:4px;height:4px;top:14px;background:#94a3b8}
+
+/* 关键数据高亮 */
+.section-body em{font-style:normal;color:#3b82f6;font-weight:600}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+th{background:#f1f5f9;color:#475569;padding:10px 14px;text-align:left;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}
+td{padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#334155}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:#fafbfc}
+
+/* 底栏 */
+.footer{text-align:center;padding:20px 48px 28px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9}
+
+@media print{
+  body{background:#fff;padding:0}
+  .poster{max-width:100%;box-shadow:none;border-radius:0}
+  .header{border-radius:0}
+  .body-area{padding:32px 36px}
+}
 </style>
 </head>
 <body>
 <div class="poster">
   <div class="header">
-    <div class="date">WORK REVIEW REPORT</div>
+    <div class="date">工作总结报告</div>
     <h1>${title}</h1>
-    <div class="sub">对外展示版 · 成果导向</div>
+    <div class="sub">对外展示版</div>
   </div>
   <div class="body-area">
     ${sectionCards}
   </div>
-  <div class="footer">Generated by 工作复盘工具 · ${new Date().toLocaleDateString('zh-CN')}</div>
+  <div class="footer">工作复盘工具 · ${new Date().toLocaleDateString('zh-CN')}</div>
 </div>
 </body>
 </html>`;
@@ -801,10 +1035,14 @@ ${periodLabel} · ${periodName}复盘
 }
 
 async function aiRespond() {
+  // 兜底：STATE 里 Key 为空时，尝试从 localStorage 恢复
+  if (!STATE.apiConfig.apiKey) {
+    STATE.apiConfig.apiKey = _loadApiKey();
+  }
   if (!STATE.apiConfig.apiKey) {
     STATE.messages.push({
       type: 'ai',
-      content: '⚠️ 还没配置API Key，我暂时无法追问你。\n\n点击左侧「⚙️ API设置」配置后，我就可以像顾问一样帮你深度复盘了。推荐使用DeepSeek（deepseek-chat），便宜、中文好、国内直接访问。',
+      content: '⚠️ 还没配置API Key，我暂时无法追问你。\n\n点击左侧「⚙️ API设置」配置后，我就可以像顾问一样帮你深度复盘了。推荐使用DeepSeek V4（deepseek-v4-flash），便宜、中文好、国内直接访问。',
       subType: 'system'
     });
     saveCurrentSession();
@@ -1117,7 +1355,7 @@ const AUDIO_EXTS = ['mp3','wav','m4a','aac','ogg','wma','flac','amr','opus','web
 
 // API提供商预设
 const API_PROVIDERS = {
-  'deepseek': { name: 'DeepSeek', endpoint: 'https://api.deepseek.com/v1', model: 'deepseek-chat', vision: false },
+  'deepseek': { name: 'DeepSeek', endpoint: 'https://api.deepseek.com', model: 'deepseek-v4-flash', vision: false },
   'moonshot': { name: 'Moonshot (Kimi)', endpoint: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', vision: true },
   'custom': { name: '自定义', endpoint: '', model: '', vision: false }
 };
@@ -1596,6 +1834,7 @@ function saveSettings() {
   localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
   localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
   localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
   // 按提供商分别存储Key，方便快捷切换
   const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
   keys[STATE.apiConfig.provider] = STATE.apiConfig.apiKey;
@@ -1636,11 +1875,12 @@ function closeProviderPopup() {
 }
 
 function getProviderKey(prov) {
-  // 先检查组内Key存储，再检查当前settings
+  // 先检查组内Key存储，再检查ws_api_key
   const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
   if (keys[prov]) return keys[prov];
   if (prov === STATE.apiConfig.provider) return STATE.apiConfig.apiKey;
-  return '';
+  // 最后兜底：从 ws_api_key 读取
+  return localStorage.getItem('ws_api_key') || '';
 }
 
 function pickProvider(prov) {
@@ -1664,6 +1904,7 @@ function pickProvider(prov) {
   localStorage.setItem('ws_api_provider', prov);
   localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
   localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
   refreshProviderUI();
   showToast(`已切换至 ${preset?.name || '自定义'}`, 'success');
 }
@@ -1685,8 +1926,15 @@ async function testApi() {
   localStorage.setItem('ws_api_provider', STATE.apiConfig.provider);
   localStorage.setItem('ws_api_endpoint', STATE.apiConfig.endpoint);
   localStorage.setItem('ws_api_model', STATE.apiConfig.model);
+  localStorage.setItem('ws_api_key', STATE.apiConfig.apiKey);
+  // 按提供商分别存储Key，方便快捷切换
   const keys = JSON.parse(localStorage.getItem('ws_provider_keys') || '{}');
   keys[STATE.apiConfig.provider] = STATE.apiConfig.apiKey;
+  if (STATE.apiConfig.provider === 'custom') {
+    const cfgs = JSON.parse(localStorage.getItem('ws_provider_cfgs') || '{}');
+    cfgs.custom = { endpoint: STATE.apiConfig.endpoint, model: STATE.apiConfig.model };
+    localStorage.setItem('ws_provider_cfgs', JSON.stringify(cfgs));
+  }
   localStorage.setItem('ws_provider_keys', JSON.stringify(keys));
   refreshProviderUI();
 
