@@ -560,29 +560,30 @@ function renderSimpleMarkdown(text) {
     // 标题
     if (/^###\s/.test(line)) {
       if (inList) { html += '</ul>'; inList = false; }
-      line = formatInlineMd(escHtml(line.replace(/^###\s*/, '')));
+      line = formatInlineMd(line.replace(/^###\s*/, ''));
       html += `<h4>${line}</h4>`;
       continue;
     }
     if (/^##\s/.test(line)) {
       if (inList) { html += '</ul>'; inList = false; }
-      line = formatInlineMd(escHtml(line.replace(/^##\s*/, '')));
+      line = formatInlineMd(line.replace(/^##\s*/, ''));
       html += `<h3>${line}</h3>`;
       continue;
     }
     if (/^#\s/.test(line)) {
       if (inList) { html += '</ul>'; inList = false; }
-      line = formatInlineMd(escHtml(line.replace(/^#\s*/, '')));
+      line = formatInlineMd(line.replace(/^#\s*/, ''));
       html += `<h2>${line}</h2>`;
       continue;
     }
 
     // 表格
     if (line.startsWith('|')) {
-      if (/^\|[\s\-:|]+\|$/.test(line)) { tableRows.push(null); continue; }
+      // 匹配分隔行 |---|---| 或 | - | - | 等各种变体
+      if (/^\|?\s*[\-\s:|]+\|\s*$/.test(line)) { tableRows.push(null); continue; }
       if (inList) { html += '</ul>'; inList = false; }
       const cells = line.split('|').filter(c => c.trim());
-      tableRows.push(cells.map(c => formatInlineMd(escHtml(c.trim()))));
+      tableRows.push(cells.map(c => formatInlineMd(c.trim())));
       if (!inTable) { inTable = true; }
       continue;
     } else if (inTable) {
@@ -601,14 +602,16 @@ function renderSimpleMarkdown(text) {
     // 列表项
     if (/^[-*·]\s/.test(line) || /^\d+\.\s/.test(line)) {
       if (!inList) { html += '<ul>'; inList = true; }
-      line = formatInlineMd(escHtml(line.replace(/^[\d]+\.\s*/, '').replace(/^[-*·]\s*/, '')));
+      // 先提取纯文本（去掉列表标记），再做 Markdown 渲染
+      const text = line.replace(/^[\d]+\.\s*/, '').replace(/^[-*·]\s*/, '');
+      line = formatInlineMd(text);
       html += `<li>${line}</li>`;
       continue;
     }
 
     // 普通段落
     if (inList) { html += '</ul>'; inList = false; }
-    line = formatInlineMd(escHtml(line));
+    line = formatInlineMd(line);
     html += `<p>${line}</p>`;
   }
 
@@ -627,10 +630,37 @@ function renderSimpleMarkdown(text) {
 }
 
 function formatInlineMd(text) {
-  // 先处理加粗，再处理斜体，对内容做 HTML 转义防止 XSS
-  return text
-    .replace(/\*\*(.+?)\*\*/g, (m, p1) => `<strong>${escHtml(p1)}</strong>`)
-    .replace(/\*(.+?)\*/g, (m, p1) => `<em>${escHtml(p1)}</em>`);
+  // 处理行内 Markdown：加粗 **text**、斜体 *text*
+  // 策略：分段处理，普通文本做 HTML 转义，标记内的文本也做转义
+  if (!text) return '';
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    // 检查加粗 **
+    if (text.substr(i, 2) === '**') {
+      const end = text.indexOf('**', i + 2);
+      if (end !== -1) {
+        const content = text.slice(i + 2, end);
+        result += `<strong>${escHtml(content)}</strong>`;
+        i = end + 2;
+        continue;
+      }
+    }
+    // 检查斜体 * (但排除 ** 的情况)
+    if (text[i] === '*' && text[i + 1] !== '*') {
+      const end = text.indexOf('*', i + 1);
+      if (end !== -1 && text[end + 1] !== '*') {
+        const content = text.slice(i + 1, end);
+        result += `<em>${escHtml(content)}</em>`;
+        i = end + 1;
+        continue;
+      }
+    }
+    // 普通字符，做 HTML 转义
+    result += escHtml(text[i]);
+    i++;
+  }
+  return result;
 }
 
 function renderReportCard(msg) {
