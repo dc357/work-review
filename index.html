@@ -1128,14 +1128,27 @@ async function aiRespond() {
   const isReportRequest = /生成报告|出报告|总结一下|帮我总结|写周报|写日报|写月报/.test(lastContent);
 
   try {
-    const response = await fetch(`${STATE.apiConfig.endpoint}/chat/completions`, {
+    // 发请求前最后一道防线：确保不会用废弃的模型名
+    let reqModel = STATE.apiConfig.model;
+    if (reqModel === 'deepseek-chat' || reqModel === 'deepseek-reasoner') {
+      reqModel = 'deepseek-v4-flash';
+      STATE.apiConfig.model = reqModel;
+      localStorage.setItem('ws_api_model', reqModel);
+    }
+    let reqEndpoint = STATE.apiConfig.endpoint;
+    if (reqEndpoint === 'https://api.deepseek.com/v1') {
+      reqEndpoint = 'https://api.deepseek.com';
+      STATE.apiConfig.endpoint = reqEndpoint;
+      localStorage.setItem('ws_api_endpoint', reqEndpoint);
+    }
+    const response = await fetch(`${reqEndpoint}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${STATE.apiConfig.apiKey}`
       },
       body: JSON.stringify({
-        model: STATE.apiConfig.model,
+        model: reqModel,
         messages: messages,
         temperature: 0.7,
         max_tokens: isReportRequest ? 3000 : 1200
@@ -1812,6 +1825,15 @@ function restoreMainView() {
 
 // ==================== 设置 ====================
 function showSettings() {
+  // 即时修正：打开设置时如果检测到旧模型名/端点，立即更新
+  if (STATE.apiConfig.model === 'deepseek-chat' || STATE.apiConfig.model === 'deepseek-reasoner') {
+    STATE.apiConfig.model = 'deepseek-v4-flash';
+    localStorage.setItem('ws_api_model', 'deepseek-v4-flash');
+  }
+  if (STATE.apiConfig.endpoint === 'https://api.deepseek.com/v1') {
+    STATE.apiConfig.endpoint = 'https://api.deepseek.com';
+    localStorage.setItem('ws_api_endpoint', 'https://api.deepseek.com');
+  }
   const prov = STATE.apiConfig.provider;
   const opts = Object.entries(API_PROVIDERS).map(([k,v]) => 
     `<option value="${k}" ${k===prov?'selected':''}>${v.name}</option>`
